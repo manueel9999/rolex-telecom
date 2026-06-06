@@ -31,6 +31,8 @@ app.use(express.json());
 
 // Serve frontend static files (after build)
 app.use(express.static(path.join(__dirname, '../dist')));
+// Serve public/ directory (bridge.html, etc.)
+app.use(express.static(path.join(__dirname, '../public')));
 
 // ============================================
 // DEVICE STORAGE (in-memory, replace with DB later)
@@ -38,6 +40,7 @@ app.use(express.static(path.join(__dirname, '../dist')));
 const devices = new Map();
 const sessions = new Map(); // sessionId → { deviceId, ws, connectedAt }
 const agentConnections = new Map(); // deviceId → ws (Windows agent)
+const bridgeConnections = new Map(); // deviceId → ws (Bridge browser on Windows PC)
 
 // --- Seed some test devices ---
 function seedDevices() {
@@ -187,8 +190,20 @@ app.get('/api/calls/:deviceId', (req, res) => {
   res.json({ success: true, calls: deviceCalls });
 });
 
-// SPA fallback
+// --- Admin: list devices (for bridge page) ---
+app.get('/api/admin/devices', (req, res) => {
+  const deviceList = [];
+  devices.forEach((d) => {
+    deviceList.push({ id: d.id, name: d.name, status: d.status });
+  });
+  res.json({ devices: deviceList });
+});
+
+// SPA fallback — skip bridge.html and other static files
 app.get('/{*splat}', (req, res) => {
+  if (req.path.endsWith('.html') && req.path !== '/index.html') {
+    return res.status(404).send('Not found');
+  }
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
@@ -197,16 +212,16 @@ app.get('/{*splat}', (req, res) => {
 // ============================================
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const type = url.searchParams.get('type'); // 'user' or 'agent'
+  const type = url.searchParams.get('type'); // 'user', 'agent', or 'bridge'
   const id = url.searchParams.get('id');     // sessionId or deviceId
 
   console.log(`[WS] New connection: type=${type}, id=${id}`);
 
   if (type === 'agent') {
-    // Windows agent connecting for a device
     handleAgentConnection(ws, id);
+  } else if (type === 'bridge') {
+    handleBridgeConnection(ws, id);
   } else {
-    // Web user connecting with sessionId
     handleUserConnection(ws, id);
   }
 });
@@ -295,6 +310,45 @@ function handleAgentConnection(ws, deviceId) {
   });
 }
 
+// --- Bridge connection (Windows PC browser for audio) ---
+function handleBridgeConnection(ws, deviceId) {
+  const device = devices.get(deviceId);
+  if (!device) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Unknown device' }));
+    ws.close();
+    return;
+  }
+
+  bridgeConnections.set(deviceId, ws);
+  console.log(`[WS] Bridge connected for device: ${deviceId}`);
+
+  // Notify users that bridge is online
+  broadcastToDeviceUsers(deviceId, { type: 'bridge_status', online: true });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      handleBridgeMessage(ws, deviceId, msg);
+    } catch (e) {
+      console.error('[WS] Bridge parse error:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log(`[WS] Bridge disconnected: device=${deviceId}`);
+    bridgeConnections.delete(deviceId);
+    broadcastToDeviceUsers(deviceId, { type: 'bridge_status', online: false });
+  });
+}
+
+function handleBridgeMessage(ws, deviceId, msg) {
+  // Relay WebRTC signaling from bridge → operator
+  if (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice' || msg.type === 'rtc_ready') {
+    broadcastToDeviceUsers(deviceId, msg);
+    return;
+  }
+}
+
 function handleUserMessage(ws, session, msg) {
   const deviceId = session.deviceId;
   const agentWs = agentConnections.get(deviceId);
@@ -353,6 +407,18 @@ function handleUserMessage(ws, session, msg) {
     case 'speaker':
       relayToAgent(agentWs, { type: 'speaker', enabled: msg.enabled });
       break;
+
+    // WebRTC signaling — relay to bridge
+    case 'rtc_offer':
+    case 'rtc_answer':
+    case 'rtc_ice':
+    case 'rtc_ready': {
+      const bridgeWs = bridgeConnections.get(deviceId);
+      if (bridgeWs && bridgeWs.readyState === WebSocket.OPEN) {
+        bridgeWs.send(JSON.stringify(msg));
+      }
+      break;
+    }
 
     default:
       console.log(`[WS] Unknown user message type: ${msg.type}`);

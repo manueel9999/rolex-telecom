@@ -287,7 +287,6 @@ export class App {
       onCallNumber: (number) => {
         this.state.inputNumber = number;
         this.switchPage('dialpad');
-        this.phonePage.updateDisplay(number);
       },
     });
 
