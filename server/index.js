@@ -479,9 +479,43 @@ function handleAgentMessage(ws, deviceId, msg) {
         number: msg.number,
         duration: msg.duration,
       });
+
+      // Update call history
+      if (msg.status === 'ended' && msg.number) {
+        // Find the latest call for this number and update duration
+        const existing = callHistory.find(c => 
+          c.deviceId === deviceId && 
+          c.number === msg.number && 
+          c.status !== 'ended'
+        );
+        if (existing) {
+          existing.duration = msg.duration || 0;
+          existing.status = 'ended';
+        }
+      } else if (msg.status === 'connected' && msg.number) {
+        const existing = callHistory.find(c => 
+          c.deviceId === deviceId && 
+          c.number === msg.number && 
+          c.status !== 'ended'
+        );
+        if (existing) {
+          existing.status = 'connected';
+        }
+      }
       break;
 
     case 'incoming_call':
+      // Add incoming call to history
+      callHistory.push({
+        id: uuidv4(),
+        deviceId,
+        number: msg.number || 'Неизвестный',
+        direction: 'incoming',
+        timestamp: new Date().toISOString(),
+        duration: 0,
+        status: 'ringing',
+      });
+
       broadcastToDeviceUsers(deviceId, {
         type: 'incoming_call',
         number: msg.number,
