@@ -342,8 +342,10 @@ function handleBridgeConnection(ws, deviceId) {
 }
 
 function handleBridgeMessage(ws, deviceId, msg) {
+  console.log(`[BRIDGE→] ${msg.type} from bridge for device ${deviceId}`);
   // Relay WebRTC signaling from bridge → operator
   if (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice' || msg.type === 'rtc_ready') {
+    console.log(`[RELAY] bridge→user: ${msg.type}`);
     broadcastToDeviceUsers(deviceId, msg);
     return;
   }
@@ -413,9 +415,13 @@ function handleUserMessage(ws, session, msg) {
     case 'rtc_answer':
     case 'rtc_ice':
     case 'rtc_ready': {
+      console.log(`[USER→] ${msg.type} from user for device ${deviceId}`);
       const bridgeWs = bridgeConnections.get(deviceId);
       if (bridgeWs && bridgeWs.readyState === WebSocket.OPEN) {
+        console.log(`[RELAY] user→bridge: ${msg.type}`);
         bridgeWs.send(JSON.stringify(msg));
+      } else {
+        console.log(`[RELAY] NO bridge connected for ${deviceId}!`);
       }
       break;
     }
