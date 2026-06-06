@@ -706,7 +706,10 @@ export class PhonePage {
     const panel = document.getElementById('audio-panel');
     if (panel) {
       panel.innerHTML = this._renderAudioPanel(this.state.device || {});
-      this.mount(); // rebind events
+      // Only rebind audio events, NOT dialpad (to avoid duplicate handlers)
+      this._bindIdleEvents();
+      this._bindConnectingEvents();
+      this._bindConnectedEvents();
     }
   }
 

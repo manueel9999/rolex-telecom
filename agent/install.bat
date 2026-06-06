@@ -1,41 +1,44 @@
 @echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>&1
+title Rolex Telecom Agent
+
 echo ==========================================
 echo   Rolex Telecom - Windows Agent Setup
 echo ==========================================
 echo.
 
-:: Check Python
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ Python не найден!
-    echo    Скачайте с https://python.org/downloads
-    echo    При установке отметьте "Add Python to PATH"
+REM Check Python
+where python >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Python ne najden!
+    echo    Skachajte s https://python.org/downloads
+    echo    Pri ustanovke otmet'te "Add Python to PATH"
     pause
     exit /b 1
 )
 
-echo ✅ Python найден
+echo [OK] Python najden
+python --version
 echo.
 
-:: Install dependencies
-echo 📦 Установка зависимостей...
-pip install -r requirements.txt
-echo.
-
-if errorlevel 1 (
-    echo ❌ Ошибка установки зависимостей
+REM Install dependencies
+echo [INFO] Ustanovka zavisimostej...
+pip install websockets pywinauto pywin32 --quiet
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Oshibka ustanovki
     pause
     exit /b 1
 )
 
-echo ✅ Зависимости установлены
+echo [OK] Zavisimosti ustanovleny
 echo.
 echo ==========================================
-echo   Запуск агента...
+echo   Zapusk agenta...
 echo ==========================================
 echo.
 
-python rolex_agent.py
+python rolex_agent.py %*
 
+echo.
+echo [INFO] Agent ostanovlen
 pause
