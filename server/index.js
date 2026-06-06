@@ -217,6 +217,10 @@ wss.on('connection', (ws, req) => {
 
   console.log(`[WS] New connection: type=${type}, id=${id}`);
 
+  // Keepalive ping every 25s
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   if (type === 'agent') {
     handleAgentConnection(ws, id);
   } else if (type === 'bridge') {
@@ -225,6 +229,15 @@ wss.on('connection', (ws, req) => {
     handleUserConnection(ws, id);
   }
 });
+
+// Ping all clients every 25s to keep connections alive through nginx
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 25000);
 
 function handleUserConnection(ws, sessionId) {
   let session = sessions.get(sessionId);

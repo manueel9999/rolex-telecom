@@ -409,6 +409,11 @@
       };
 
       ws.onclose = () => {
+        // If WebRTC is already connected, audio flows P2P — no need to reconnect WS
+        if (pc && pc.connectionState === 'connected') {
+          log('WebSocket отключен, но аудио работает через P2P ✅', 'info');
+          return;
+        }
         log('WebSocket отключен — переподключение через 3с...', 'error');
         setStatus('connecting', 'Переподключение...');
         setTimeout(() => {
