@@ -181,22 +181,14 @@ class RolexAgent:
         self.current_number = number
         self.call_state = CallState.DIALING
 
-        # Clean number
+        # Clean number — don't add + prefix, user controls format
         clean = number.strip().replace(" ", "").replace("-", "")
-        if not clean.startswith("+"):
-            clean = "+" + clean
 
         try:
             # Use tel: protocol — Windows will open Phone Link
             os.startfile(f"tel:{clean}")
             print(f"  → Открыт tel:{clean}")
-
-            await self.send({
-                "type": "call_status",
-                "status": "ringing",
-                "number": number,
-            })
-            self.call_state = CallState.RINGING
+            # Don't send ringing yet — monitor will detect actual state
 
         except Exception as e:
             print(f"  ❌ Ошибка: {e}")
