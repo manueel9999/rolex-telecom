@@ -883,6 +883,41 @@ body {
   margin-top: var(--space-xs);
 }
 
+/* Dialpad container */
+.dialpad-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg);
+  height: 100%;
+  justify-content: center;
+}
+
+.phone-display__actions {
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.phone-display__clear {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.phone-display__clear:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
 /* Dialpad grid */
 .dialpad {
   display: grid;
@@ -890,6 +925,63 @@ body {
   gap: var(--space-md);
   max-width: 300px;
   width: 100%;
+}
+
+/* Dialpad action buttons */
+.dialpad-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xl);
+  width: 100%;
+  max-width: 300px;
+}
+
+.dialpad-action__call {
+  width: 64px;
+  height: 64px;
+  border: none;
+  background: var(--success);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: white;
+}
+
+.dialpad-action__call svg {
+  width: 28px;
+  height: 28px;
+}
+
+.dialpad-action__call:hover {
+  background: #16a34a;
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+.dialpad-action__backspace,
+.dialpad-action__paste {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: var(--glass-bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.dialpad-action__backspace:hover,
+.dialpad-action__paste:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-primary);
 }
 
 .dialpad__key {
@@ -933,7 +1025,7 @@ body {
   transform: scale(0.95);
 }
 
-.dialpad__key-digit {
+.dialpad__digit {
   font-size: var(--font-size-xl);
   font-weight: 500;
   color: var(--text-primary);
@@ -942,7 +1034,7 @@ body {
   z-index: 1;
 }
 
-.dialpad__key-letters {
+.dialpad__letters {
   font-size: 9px;
   color: var(--text-tertiary);
   letter-spacing: 2px;

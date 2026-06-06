@@ -6,6 +6,7 @@
 import { icons } from '../utils/icons.js';
 import { webrtc } from '../services/WebRTCService.js';
 import { ws } from '../services/WsService.js';
+import { audio } from '../services/AudioService.js';
 
 export class PhonePage {
   constructor({ state }) {
@@ -16,6 +17,7 @@ export class PhonePage {
     this.inputDevices = [];
     this.outputDevices = [];
     this.isMuted = false;
+    this.inputNumber = '';
     this._micTestStream = null;
     this._micTestAnalyser = null;
     this._micTestAnimFrame = null;
@@ -28,20 +30,54 @@ export class PhonePage {
 
     return `
       <div class="phone-layout">
-        <!-- LEFT: Phone Screen -->
+        <!-- LEFT: Dialpad -->
         <div class="phone-screen-panel" id="phone-screen-panel">
           <div class="panel-header">
-            <span class="panel-header__title">${icons.device} Экран телефона</span>
+            <span class="panel-header__title">${icons.dialpad} Набор номера</span>
             <span class="panel-header__status" id="phone-screen-status">
-              <span class="dot offline"></span> Не подключен
+              <span class="dot ${this.state.agentOnline ? 'online' : 'offline'}"></span>
+              ${this.state.agentOnline ? 'Готов' : 'Не подключен'}
             </span>
           </div>
           <div class="phone-screen-area" id="phone-screen-area">
-            <div class="phone-screen-placeholder" id="phone-screen-placeholder">
-              <div class="phone-screen-placeholder__icon">${icons.device}</div>
-              <div class="phone-screen-placeholder__text">Экран телефона</div>
-              <div class="phone-screen-placeholder__hint">
-                Подключите устройство для<br>отображения экрана
+            <div class="dialpad-container">
+              <!-- Number display -->
+              <div class="phone-display">
+                <div class="phone-display__number ${this.inputNumber ? 'has-number' : ''}" id="phone-number-display">
+                  ${this.inputNumber || 'Введите номер'}
+                </div>
+                <div class="phone-display__actions" id="display-actions" style="display:${this.inputNumber ? 'flex' : 'none'}">
+                  <button class="phone-display__clear" id="btn-clear-number" title="Очистить">✕</button>
+                </div>
+              </div>
+
+              <!-- Dialpad grid -->
+              <div class="dialpad" id="dialpad">
+                <button class="dialpad__key" data-key="1"><span class="dialpad__digit">1</span></button>
+                <button class="dialpad__key" data-key="2"><span class="dialpad__digit">2</span><span class="dialpad__letters">ABC</span></button>
+                <button class="dialpad__key" data-key="3"><span class="dialpad__digit">3</span><span class="dialpad__letters">DEF</span></button>
+                <button class="dialpad__key" data-key="4"><span class="dialpad__digit">4</span><span class="dialpad__letters">GHI</span></button>
+                <button class="dialpad__key" data-key="5"><span class="dialpad__digit">5</span><span class="dialpad__letters">JKL</span></button>
+                <button class="dialpad__key" data-key="6"><span class="dialpad__digit">6</span><span class="dialpad__letters">MNO</span></button>
+                <button class="dialpad__key" data-key="7"><span class="dialpad__digit">7</span><span class="dialpad__letters">PQRS</span></button>
+                <button class="dialpad__key" data-key="8"><span class="dialpad__digit">8</span><span class="dialpad__letters">TUV</span></button>
+                <button class="dialpad__key" data-key="9"><span class="dialpad__digit">9</span><span class="dialpad__letters">WXYZ</span></button>
+                <button class="dialpad__key" data-key="*"><span class="dialpad__digit">✱</span></button>
+                <button class="dialpad__key" data-key="0"><span class="dialpad__digit">0</span><span class="dialpad__letters">+</span></button>
+                <button class="dialpad__key" data-key="#"><span class="dialpad__digit">#</span></button>
+              </div>
+
+              <!-- Action buttons -->
+              <div class="dialpad-actions">
+                <button class="dialpad-action__backspace" id="btn-backspace" title="Удалить">
+                  ⌫
+                </button>
+                <button class="dialpad-action__call" id="btn-call" title="Позвонить">
+                  ${icons.phone}
+                </button>
+                <button class="dialpad-action__paste" id="btn-paste" title="Вставить">
+                  📋
+                </button>
               </div>
             </div>
           </div>
@@ -233,9 +269,82 @@ export class PhonePage {
     await this._loadDevices();
 
     // Bind events based on current state
+    this._bindDialpadEvents();
     this._bindIdleEvents();
     this._bindConnectingEvents();
     this._bindConnectedEvents();
+  }
+
+  _bindDialpadEvents() {
+    // Dialpad keys
+    const dialpad = document.getElementById('dialpad');
+    if (dialpad) {
+      dialpad.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-key]');
+        if (btn) {
+          const key = btn.dataset.key;
+          this.inputNumber += key;
+          audio.playDTMF(key);
+          this._updateDisplay();
+          ws.send({ type: 'dial', key });
+        }
+      });
+    }
+
+    // Call button
+    const callBtn = document.getElementById('btn-call');
+    if (callBtn) {
+      callBtn.addEventListener('click', () => {
+        if (this.inputNumber) {
+          ws.send({ type: 'call', number: this.inputNumber });
+        }
+      });
+    }
+
+    // Backspace
+    const backBtn = document.getElementById('btn-backspace');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        this.inputNumber = this.inputNumber.slice(0, -1);
+        this._updateDisplay();
+      });
+    }
+
+    // Clear
+    const clearBtn = document.getElementById('btn-clear-number');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        this.inputNumber = '';
+        this._updateDisplay();
+      });
+    }
+
+    // Paste
+    const pasteBtn = document.getElementById('btn-paste');
+    if (pasteBtn) {
+      pasteBtn.addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          const cleaned = text.replace(/[^0-9+*#]/g, '');
+          if (cleaned) {
+            this.inputNumber = cleaned;
+            this._updateDisplay();
+          }
+        } catch(e) { /* clipboard denied */ }
+      });
+    }
+  }
+
+  _updateDisplay() {
+    const display = document.getElementById('phone-number-display');
+    const actions = document.getElementById('display-actions');
+    if (display) {
+      display.textContent = this.inputNumber || 'Введите номер';
+      display.classList.toggle('has-number', !!this.inputNumber);
+    }
+    if (actions) {
+      actions.style.display = this.inputNumber ? 'flex' : 'none';
+    }
   }
 
   _bindIdleEvents() {
