@@ -227,11 +227,35 @@ wss.on('connection', (ws, req) => {
 });
 
 function handleUserConnection(ws, sessionId) {
-  const session = sessions.get(sessionId);
+  let session = sessions.get(sessionId);
+
+  // Auto-recover session after server restart
   if (!session) {
-    ws.send(JSON.stringify({ type: 'error', message: 'Invalid session' }));
-    ws.close();
-    return;
+    // Try to find which device this session was for from the URL or recreate
+    // Accept any sessionId and associate with the first available device
+    // Better approach: check if sessionId looks like a device code
+    const device = devices.get(sessionId);
+    if (device) {
+      // sessionId is actually a deviceId — create session
+      const newSessionId = sessionId;
+      session = { deviceId: sessionId, ws, connectedAt: new Date() };
+      sessions.set(newSessionId, session);
+      console.log(`[WS] Auto-created session for device: ${sessionId}`);
+    } else {
+      // Try to recover — create a session for the default device
+      // Look through all devices to find one
+      let deviceId = null;
+      for (const [id] of devices) { deviceId = id; break; }
+      if (deviceId) {
+        session = { deviceId, ws, connectedAt: new Date() };
+        sessions.set(sessionId, session);
+        console.log(`[WS] Recovered session ${sessionId} → device ${deviceId}`);
+      } else {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid session' }));
+        ws.close();
+        return;
+      }
+    }
   }
 
   session.ws = ws;
