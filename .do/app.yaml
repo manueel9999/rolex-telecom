@@ -1,0 +1,21 @@
+spec:
+  name: rolex-telecom
+  region: fra
+
+  services:
+    - name: web
+      source:
+        type: LOCAL
+      environment_slug: node-js
+      instance_count: 1
+      instance_size_slug: apps-s-1vcpu-0.5gb
+      http_port: 3000
+      build_command: npm install && npm run build
+      run_command: node server/index.js
+      envs:
+        - key: NODE_ENV
+          value: production
+        - key: PORT
+          value: "3000"
+      routes:
+        - path: /
