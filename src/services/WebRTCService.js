@@ -152,6 +152,37 @@ export class WebRTCService {
     }
   }
 
+  /**
+   * Change microphone while connected
+   */
+  async changeMic(deviceId) {
+    try {
+      const constraints = {
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        video: false,
+      };
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const newTrack = newStream.getAudioTracks()[0];
+
+      // Replace track in peer connection
+      if (this.peerConnection) {
+        const sender = this.peerConnection.getSenders().find(s => s.track?.kind === 'audio');
+        if (sender) {
+          await sender.replaceTrack(newTrack);
+        }
+      }
+
+      // Stop old tracks
+      if (this.localStream) {
+        this.localStream.getAudioTracks().forEach(t => t.stop());
+      }
+      this.localStream = newStream;
+      console.log('[WebRTC] Mic changed to:', deviceId);
+    } catch (e) {
+      console.error('[WebRTC] Failed to change mic:', e);
+    }
+  }
+
   // =============================================
   // PRIVATE: WebRTC Peer Connection
   // =============================================

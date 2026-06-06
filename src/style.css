@@ -594,21 +594,34 @@ body {
   line-height: 1.6;
 }
 
-.audio-mic-select {
+/* Audio Setup Section */
+.audio-setup-section {
   width: 100%;
-  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-.audio-mic-select label {
-  display: block;
+.audio-setup-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.audio-setup-row label {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
-  margin-bottom: var(--space-xs);
   font-weight: 500;
 }
 
-.audio-mic-select select {
-  width: 100%;
+.audio-setup-controls {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.audio-device-select {
+  flex: 1;
+  min-width: 0;
   padding: var(--space-sm) var(--space-md);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -621,8 +634,104 @@ body {
   transition: border-color var(--transition-fast);
 }
 
-.audio-mic-select select:focus {
+.audio-device-select:focus {
   border-color: var(--accent-gold);
+}
+
+.audio-test-btn {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.audio-test-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-gold);
+  color: var(--text-primary);
+}
+
+/* Mic Test Meter */
+.audio-test-meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+.audio-test-stop-btn {
+  padding: var(--space-xs) var(--space-sm);
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-sm);
+  color: #ef4444;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Audio Level Bars */
+.audio-level-section {
+  width: 100%;
+  margin: var(--space-md) 0;
+}
+
+.audio-level-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.audio-level-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.audio-level-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.audio-level-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  background: #22c55e;
+  transition: width 0.05s ease-out;
+}
+
+/* Connected state device section */
+.audio-device-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+  margin: var(--space-sm) 0;
+}
+
+.audio-device-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.audio-device-row label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  min-width: 80px;
 }
 
 .audio-start-btn {
