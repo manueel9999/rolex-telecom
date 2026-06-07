@@ -1,6 +1,7 @@
 /**
  * Phone Page — 2-column layout: Dialpad | VDO.ninja Audio
  * Right panel uses VDO.ninja iframe for audio bridge
+ * Includes mic/speaker device selection
  */
 
 import { icons } from '../utils/icons.js';
@@ -15,11 +16,13 @@ export class PhonePage {
     this.vdoStarted = false;
     this._vdoIframe = null;
     this._destroyed = false;
+    this.inputDevices = [];
+    this.outputDevices = [];
+    this.selectedMic = '';
+    this.selectedSpeaker = '';
   }
 
   render() {
-    const device = this.state.device || {};
-
     return `
       <div class="phone-layout">
         <!-- LEFT: Dialpad -->
@@ -33,7 +36,6 @@ export class PhonePage {
           </div>
           <div class="phone-screen-area" id="phone-screen-area">
             <div class="dialpad-container">
-              <!-- Number display -->
               <div class="phone-display">
                 <div class="phone-display__number ${this.inputNumber ? 'has-number' : ''}" id="phone-number-display">
                   ${this.inputNumber || 'Введите номер'}
@@ -43,7 +45,6 @@ export class PhonePage {
                 </div>
               </div>
 
-              <!-- Dialpad grid -->
               <div class="dialpad" id="dialpad">
                 <button class="dialpad__key" data-key="1"><span class="dialpad__digit">1</span></button>
                 <button class="dialpad__key" data-key="2"><span class="dialpad__digit">2</span><span class="dialpad__letters">ABC</span></button>
@@ -59,17 +60,10 @@ export class PhonePage {
                 <button class="dialpad__key" data-key="#"><span class="dialpad__digit">#</span></button>
               </div>
 
-              <!-- Action buttons -->
               <div class="dialpad-actions">
-                <button class="dialpad-action__backspace" id="btn-backspace" title="Удалить">
-                  ⌫
-                </button>
-                <button class="dialpad-action__call" id="btn-call" title="Позвонить">
-                  ${icons.phone}
-                </button>
-                <button class="dialpad-action__paste" id="btn-paste" title="Вставить">
-                  📋
-                </button>
+                <button class="dialpad-action__backspace" id="btn-backspace" title="Удалить">⌫</button>
+                <button class="dialpad-action__call" id="btn-call" title="Позвонить">${icons.phone}</button>
+                <button class="dialpad-action__paste" id="btn-paste" title="Вставить">📋</button>
               </div>
             </div>
           </div>
@@ -93,20 +87,25 @@ export class PhonePage {
   }
 
   _renderAudioPanel() {
-    if (this.vdoStarted) {
-      return this._renderVdoActive();
-    }
-    return this._renderVdoIdle();
+    return this.vdoStarted ? this._renderVdoActive() : this._renderVdoIdle();
   }
 
   _renderVdoIdle() {
     const device = this.state.device || {};
     const room = device.vdoRoom || '—';
 
+    const micOptions = this.inputDevices.map((d, i) =>
+      `<option value="${d.deviceId}" ${d.deviceId === this.selectedMic ? 'selected' : ''}>${d.label || `Микрофон ${i + 1}`}</option>`
+    ).join('');
+
+    const speakerOptions = this.outputDevices.map((d, i) =>
+      `<option value="${d.deviceId}" ${d.deviceId === this.selectedSpeaker ? 'selected' : ''}>${d.label || `Динамик ${i + 1}`}</option>`
+    ).join('');
+
     return `
       <div class="audio-panel__idle">
         <div class="audio-status-icon idle">
-          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             <line x1="12" y1="19" x2="12" y2="23"/>
@@ -114,8 +113,25 @@ export class PhonePage {
           </svg>
         </div>
         <div class="audio-status-text">Аудио связь через VDO.ninja</div>
-        <div class="audio-status-hint">
-          Подключитесь к комнате для двусторонней голосовой связи с Windows ПК
+
+        <!-- Device Selection -->
+        <div class="vdo-device-selectors">
+          <div class="vdo-device-select">
+            <label class="vdo-device-select__label">
+              ${icons.mic} Микрофон
+            </label>
+            <select class="vdo-device-select__input" id="select-mic">
+              ${micOptions || '<option value="">Загрузка...</option>'}
+            </select>
+          </div>
+          <div class="vdo-device-select">
+            <label class="vdo-device-select__label">
+              ${icons.headphones} Наушники / Динамик
+            </label>
+            <select class="vdo-device-select__input" id="select-speaker">
+              ${speakerOptions || '<option value="">Загрузка...</option>'}
+            </select>
+          </div>
         </div>
 
         <div class="vdo-room-info">
@@ -145,22 +161,40 @@ export class PhonePage {
   }
 
   _renderVdoActive() {
+    const micOptions = this.inputDevices.map((d, i) =>
+      `<option value="${d.deviceId}" ${d.deviceId === this.selectedMic ? 'selected' : ''}>${d.label || `Микрофон ${i + 1}`}</option>`
+    ).join('');
+
+    const speakerOptions = this.outputDevices.map((d, i) =>
+      `<option value="${d.deviceId}" ${d.deviceId === this.selectedSpeaker ? 'selected' : ''}>${d.label || `Динамик ${i + 1}`}</option>`
+    ).join('');
+
     return `
       <div class="audio-panel__connected vdo-active-panel">
-        <div class="audio-status-icon connected">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
+        <div class="audio-status-bar connected">
+          <div class="audio-status-bar__dot"></div>
+          <span>VDO.ninja подключён — двусторонняя аудио связь активна</span>
         </div>
-        <div class="audio-status-text">VDO.ninja подключён</div>
-        <div class="audio-status-hint">Двусторонняя аудио связь активна</div>
 
-        <!-- VDO.ninja iframe container -->
+        <!-- VDO.ninja iframe container — large -->
         <div class="vdo-iframe-container" id="vdo-iframe-container">
           <!-- iframe injected dynamically -->
+        </div>
+
+        <!-- Device selection during call -->
+        <div class="vdo-device-selectors compact">
+          <div class="vdo-device-select">
+            <label class="vdo-device-select__label">${icons.mic} Микрофон</label>
+            <select class="vdo-device-select__input" id="select-mic-active">
+              ${micOptions}
+            </select>
+          </div>
+          <div class="vdo-device-select">
+            <label class="vdo-device-select__label">${icons.headphones} Динамик</label>
+            <select class="vdo-device-select__input" id="select-speaker-active">
+              ${speakerOptions}
+            </select>
+          </div>
         </div>
 
         <div class="audio-controls">
@@ -177,15 +211,57 @@ export class PhonePage {
     `;
   }
 
-  mount() {
+  async mount() {
     if (this._destroyed) return;
 
     this._bindDialpadEvents();
+    await this._loadDevices();
     this._bindAudioPanelEvents();
 
-    // If VDO was already started, re-inject iframe
     if (this.vdoStarted) {
       this._injectVdoIframe();
+    }
+  }
+
+  async _loadDevices() {
+    try {
+      // Request permission first (needed to get device labels)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      this.inputDevices = allDevices.filter(d => d.kind === 'audioinput');
+      this.outputDevices = allDevices.filter(d => d.kind === 'audiooutput');
+
+      // Set defaults if not selected
+      if (!this.selectedMic && this.inputDevices.length) {
+        this.selectedMic = this.inputDevices[0].deviceId;
+      }
+      if (!this.selectedSpeaker && this.outputDevices.length) {
+        this.selectedSpeaker = this.outputDevices[0].deviceId;
+      }
+
+      // Re-render selectors
+      this._updateDeviceSelectors();
+    } catch (e) {
+      console.warn('[PhonePage] Cannot enumerate devices:', e);
+    }
+  }
+
+  _updateDeviceSelectors() {
+    const micSelect = document.getElementById('select-mic');
+    const speakerSelect = document.getElementById('select-speaker');
+
+    if (micSelect) {
+      micSelect.innerHTML = this.inputDevices.map((d, i) =>
+        `<option value="${d.deviceId}" ${d.deviceId === this.selectedMic ? 'selected' : ''}>${d.label || `Микрофон ${i + 1}`}</option>`
+      ).join('');
+    }
+
+    if (speakerSelect) {
+      speakerSelect.innerHTML = this.outputDevices.map((d, i) =>
+        `<option value="${d.deviceId}" ${d.deviceId === this.selectedSpeaker ? 'selected' : ''}>${d.label || `Динамик ${i + 1}`}</option>`
+      ).join('');
     }
   }
 
@@ -233,9 +309,22 @@ export class PhonePage {
   }
 
   _bindAudioPanelEvents() {
-    // Idle state
+    // --- Idle state ---
     document.getElementById('btn-start-vdo')?.addEventListener('click', () => {
+      // Save selected devices
+      const mic = document.getElementById('select-mic');
+      const speaker = document.getElementById('select-speaker');
+      if (mic) this.selectedMic = mic.value;
+      if (speaker) this.selectedSpeaker = speaker.value;
       this._startVdo();
+    });
+
+    document.getElementById('select-mic')?.addEventListener('change', (e) => {
+      this.selectedMic = e.target.value;
+    });
+
+    document.getElementById('select-speaker')?.addEventListener('change', (e) => {
+      this.selectedSpeaker = e.target.value;
     });
 
     document.getElementById('btn-copy-bridge')?.addEventListener('click', () => {
@@ -243,17 +332,13 @@ export class PhonePage {
       if (url) {
         navigator.clipboard.writeText(url);
         const btn = document.getElementById('btn-copy-bridge');
-        if (btn) {
-          btn.textContent = '✅';
-          setTimeout(() => { if (btn) btn.textContent = '📋'; }, 2000);
-        }
+        if (btn) { btn.textContent = '✅'; setTimeout(() => { if (btn) btn.textContent = '📋'; }, 2000); }
       }
     });
 
-    // Active state
+    // --- Active state ---
     document.getElementById('btn-mute-vdo')?.addEventListener('click', () => {
       this.isMuted = !this.isMuted;
-      // Send mute command to VDO.ninja iframe
       if (this._vdoIframe) {
         this._vdoIframe.contentWindow.postMessage({ action: 'mic', value: 'toggle' }, '*');
       }
@@ -262,6 +347,27 @@ export class PhonePage {
 
     document.getElementById('btn-stop-vdo')?.addEventListener('click', () => {
       this._stopVdo();
+    });
+
+    // Device change during active call — reconnect
+    document.getElementById('select-mic-active')?.addEventListener('change', (e) => {
+      this.selectedMic = e.target.value;
+      if (this._vdoIframe) {
+        this._vdoIframe.contentWindow.postMessage({
+          action: 'changeCamera',
+          value: this.selectedMic
+        }, '*');
+      }
+    });
+
+    document.getElementById('select-speaker-active')?.addEventListener('change', (e) => {
+      this.selectedSpeaker = e.target.value;
+      if (this._vdoIframe) {
+        this._vdoIframe.contentWindow.postMessage({
+          action: 'speakerDevice',
+          value: this.selectedSpeaker
+        }, '*');
+      }
     });
   }
 
@@ -291,20 +397,26 @@ export class PhonePage {
       return;
     }
 
-    // Build VDO.ninja URL for operator:
-    // - &room= join the device's room
-    // - &push push our mic audio
-    // - &miconly audio only, no video
-    // - &proaudio high quality unprocessed audio
-    // - &cleanoutput no UI controls overlay
-    // - &nopreview don't show self-preview
-    // - &autostart auto-connect without clicking
-    const vdoUrl = `https://vdo.ninja/?room=${encodeURIComponent(room)}&password=${encodeURIComponent(password)}&push&miconly&proaudio&cleanoutput&nopreview&autostart&label=Оператор`;
+    // Find selected mic label for VDO.ninja audiodevice param
+    const selectedMicDevice = this.inputDevices.find(d => d.deviceId === this.selectedMic);
+    const micLabel = selectedMicDevice ? selectedMicDevice.label : '';
+
+    // Build VDO.ninja URL
+    let vdoUrl = `https://vdo.ninja/?room=${encodeURIComponent(room)}&password=${encodeURIComponent(password)}&push&miconly&proaudio&cleanoutput&nopreview&autostart&label=Operator`;
+
+    // Pass mic device if selected
+    if (micLabel) {
+      vdoUrl += `&audiodevice=${encodeURIComponent(micLabel)}`;
+    }
+
+    // Pass speaker device
+    if (this.selectedSpeaker) {
+      vdoUrl += `&sink=${encodeURIComponent(this.selectedSpeaker)}`;
+    }
 
     const iframe = document.createElement('iframe');
     iframe.src = vdoUrl;
     iframe.allow = 'camera;microphone;autoplay;display-capture';
-    iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:12px;min-height:120px;';
     iframe.id = 'vdo-iframe';
 
     container.innerHTML = '';
@@ -325,8 +437,6 @@ export class PhonePage {
       }
     };
     window.addEventListener('message', this._handleVdoMessage);
-
-    // Update status indicator
     this._updateVdoStatus(true);
   }
 
