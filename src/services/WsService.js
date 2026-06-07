@@ -12,17 +12,31 @@ export class WsService {
     this.maxReconnectAttempts = 10;
     this.sessionId = null;
     this.isConnected = false;
+    this.pingInterval = null;
+    this.lastStates = new Map();
   }
 
   connect(sessionId) {
     this.sessionId = sessionId;
     this.reconnectAttempts = 0;
+    this.lastStates.clear();
     this._connect();
   }
 
   _connect() {
     if (this.ws) {
-      this.ws.close();
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      try {
+        this.ws.close();
+      } catch (e) {}
+    }
+
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -37,12 +51,22 @@ export class WsService {
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.emit('connection', { connected: true });
+
+      // Start application-level ping
+      this.pingInterval = setInterval(() => {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.send({ type: 'ping' });
+        }
+      }, 15000);
     };
 
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         console.log('[WS] Message:', msg);
+        if (msg.type) {
+          this.lastStates.set(msg.type, msg);
+        }
         this.emit(msg.type, msg);
       } catch (e) {
         console.error('[WS] Parse error:', e);
@@ -50,6 +74,10 @@ export class WsService {
     };
 
     this.ws.onclose = () => {
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
       console.log('[WS] Disconnected');
       this.isConnected = false;
       this.emit('connection', { connected: false });
@@ -141,8 +169,16 @@ export class WsService {
     }
   }
 
+  getLastState(type) {
+    return this.lastStates.get(type);
+  }
+
   disconnect() {
     clearTimeout(this.reconnectTimer);
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
     this.maxReconnectAttempts = 0; // prevent reconnect
     if (this.ws) {
       this.ws.close();

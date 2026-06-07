@@ -217,9 +217,9 @@ wss.on('connection', (ws, req) => {
 
   console.log(`[WS] New connection: type=${type}, id=${id}`);
 
-  // Keepalive ping every 25s
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
+  // Keepalive ping check: allow up to 2 missed check-ins
+  ws.isAlive = 2;
+  ws.on('pong', () => { ws.isAlive = 2; });
 
   if (type === 'agent') {
     handleAgentConnection(ws, id);
@@ -233,9 +233,16 @@ wss.on('connection', (ws, req) => {
 // Ping all clients every 25s to keep connections alive through nginx
 setInterval(() => {
   wss.clients.forEach((ws) => {
-    if (ws.isAlive === false) return ws.terminate();
-    ws.isAlive = false;
-    ws.ping();
+    if (ws.isAlive <= 0) {
+      console.log('[WS] Heartbeat timeout. Terminating connection.');
+      return ws.terminate();
+    }
+    ws.isAlive--;
+    try {
+      ws.ping();
+    } catch (e) {
+      console.error('[WS] Ping error:', e);
+    }
   });
 }, 25000);
 
@@ -292,9 +299,21 @@ function handleUserConnection(ws, sessionId) {
     online: agentWs && agentWs.readyState === WebSocket.OPEN,
   }));
 
+  // Check if bridge is online
+  const bridgeWs = bridgeConnections.get(session.deviceId);
+  ws.send(JSON.stringify({
+    type: 'bridge_status',
+    online: bridgeWs && bridgeWs.readyState === WebSocket.OPEN,
+  }));
+
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+      ws.isAlive = 2;
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
       handleUserMessage(ws, session, msg);
     } catch (e) {
       console.error('[WS] Parse error:', e);
@@ -329,6 +348,11 @@ function handleAgentConnection(ws, deviceId) {
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+      ws.isAlive = 2;
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
       handleAgentMessage(ws, deviceId, msg);
     } catch (e) {
       console.error('[WS] Agent parse error:', e);
@@ -365,6 +389,11 @@ function handleBridgeConnection(ws, deviceId) {
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+      ws.isAlive = 2;
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
       handleBridgeMessage(ws, deviceId, msg);
     } catch (e) {
       console.error('[WS] Bridge parse error:', e);

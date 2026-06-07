@@ -249,6 +249,7 @@
     let localStream = null;
     let analyser = null;
     let animFrame = null;
+    let pingInterval = null;
 
     const iceServers = [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -378,7 +379,18 @@
 
     // --- WebSocket connection (with reconnect) ---
     function connectWS(deviceId, speakerId) {
-      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        try { ws.close(); } catch (e) {}
+      }
+
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${protocol}//${location.host}/ws?type=bridge&id=${deviceId}`);
@@ -387,6 +399,13 @@
         log('WebSocket подключен', 'success');
         setStatus('connecting', 'Ожидание оператора...');
         ws.send(JSON.stringify({ type: 'rtc_ready', role: 'bridge', deviceId }));
+
+        // Start application-level ping
+        pingInterval = setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 15000);
       };
 
       ws.onmessage = async (event) => {
@@ -409,13 +428,16 @@
       };
 
       ws.onclose = () => {
-        // If WebRTC is already connected, audio flows P2P — no need to reconnect WS
-        if (pc && pc.connectionState === 'connected') {
-          log('WebSocket отключен, но аудио работает через P2P ✅', 'info');
-          return;
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
         }
-        log('WebSocket отключен — переподключение через 3с...', 'error');
-        setStatus('connecting', 'Переподключение...');
+        if (pc && pc.connectionState === 'connected') {
+          log('WebSocket отключен, но аудио работает через P2P ✅ (переподключение...)', 'info');
+        } else {
+          log('WebSocket отключен — переподключение через 3с...', 'error');
+          setStatus('connecting', 'Переподключение...');
+        }
         setTimeout(() => {
           if (localStream) {
             connectWS(deviceId, speakerId);
@@ -500,6 +522,7 @@
       }
       if (pc) { pc.close(); pc = null; }
       if (ws) { ws.close(); ws = null; }
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
       if (animFrame) cancelAnimationFrame(animFrame);
 
       setStatus('offline', 'Отключен');

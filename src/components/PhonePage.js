@@ -247,6 +247,13 @@ export class PhonePage {
   }
 
   async mount() {
+    // Check initial bridge status from cache
+    const lastBridge = ws.getLastState('bridge_status');
+    if (lastBridge) {
+      this.bridgeOnline = lastBridge.online;
+      this._updateBridgeStatus();
+    }
+
     // Listen for bridge status
     this._bridgeStatusHandler = (msg) => {
       this.bridgeOnline = msg.online;
