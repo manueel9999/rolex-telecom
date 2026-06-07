@@ -22,7 +22,7 @@ echo.
 
 REM Install dependencies
 echo [INFO] Installing dependencies...
-pip install websockets pywinauto pywin32 --quiet --disable-pip-version-check
+pip install websockets pywin32 --quiet --disable-pip-version-check
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Install failed
     echo Try: pip install websockets pywinauto pywin32
