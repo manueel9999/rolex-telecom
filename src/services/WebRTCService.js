@@ -23,6 +23,12 @@ export class WebRTCService {
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:72.56.236.204:3478' },
+      {
+        urls: 'turn:72.56.236.204:3478',
+        username: 'rolex',
+        credential: 'telecomsecret'
+      }
     ];
   }
 
