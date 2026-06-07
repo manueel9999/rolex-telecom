@@ -520,38 +520,62 @@ body {
   border-left: 1px solid var(--glass-border);
 }
 
-/* --- Audio Panel (VDO.ninja) --- */
-.audio-panel {
+/* --- VDO.ninja Panel Body --- */
+.vdo-panel-body {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Idle state */
+.vdo-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: var(--space-xl);
+  gap: var(--space-lg);
 }
 
-/* VDO.ninja room info */
-.vdo-room-info {
-  width: 100%;
-  padding: var(--space-md);
+.vdo-idle__info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-md);
+}
+
+.vdo-idle__icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
   background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  margin: var(--space-md) 0;
-}
-
-.vdo-room-info__row {
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  justify-content: center;
 }
 
-.vdo-room-info__label {
+.vdo-idle__title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.vdo-idle__hint {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.vdo-idle__room {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
 }
 
-.vdo-room-info__value {
-  font-size: var(--font-size-sm);
+.vdo-idle__room code {
   color: var(--accent-gold);
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
@@ -559,7 +583,8 @@ body {
 /* VDO.ninja bridge hint */
 .vdo-bridge-hint {
   width: 100%;
-  margin-top: var(--space-lg);
+  max-width: 400px;
+  margin-top: var(--space-md);
   padding-top: var(--space-lg);
   border-top: 1px solid var(--glass-border);
 }
@@ -589,125 +614,34 @@ body {
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-/* VDO.ninja iframe container — LARGE */
-.vdo-iframe-container {
-  width: 100%;
-  min-height: 350px;
+/* Live state — iframe fills everything */
+.vdo-live {
   flex: 1;
-  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--glass-border);
+}
+
+.vdo-iframe-container {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .vdo-iframe-container iframe {
   width: 100%;
   height: 100%;
-  min-height: 350px;
   border: none;
   display: block;
 }
 
-.vdo-active-panel {
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
-}
-
-/* VDO status bar */
-.audio-status-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+.vdo-live__footer {
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  width: 100%;
-}
-
-.audio-status-bar.connected {
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.2);
-  color: var(--success);
-}
-
-.audio-status-bar__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid var(--glass-border);
   flex-shrink: 0;
-}
-
-/* Device selectors */
-.vdo-device-selectors {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.vdo-device-selectors.compact {
-  flex-direction: row;
-  gap: var(--space-sm);
-}
-
-.vdo-device-selectors.compact .vdo-device-select {
-  flex: 1;
-}
-
-.vdo-device-select {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.vdo-device-select__label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.vdo-device-select__label svg {
-  width: 14px;
-  height: 14px;
-  color: var(--accent-gold);
-}
-
-.vdo-device-select__input {
-  width: 100%;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font-family);
-  font-size: var(--font-size-sm);
-  outline: none;
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238888a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 30px;
-}
-
-.vdo-device-select__input:focus {
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 0 2px var(--accent-gold-dim);
-}
-
-.vdo-device-select__input option {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 .audio-panel__idle,
