@@ -75,44 +75,7 @@ class AudioService {
    * Стандарт РФ: 425 Hz, 1с звук / 4с пауза
    */
   startRingback() {
-    this.stopAllTones();
-    this._ensureContext();
-
-    const playBeep = () => {
-      if (!this.ctx) return;
-      const now = this.ctx.currentTime;
-
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.value = 425; // Russian standard
-
-      // Smooth envelope: fade in 30ms, sustain, fade out 30ms
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.15, now + 0.03);
-      gain.gain.setValueAtTime(0.15, now + 0.97);
-      gain.gain.linearRampToValueAtTime(0, now + 1.0);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 1.05);
-
-      this.activeTones.push({ osc, gain });
-
-      // Clean up after beep ends
-      osc.onended = () => {
-        this.activeTones = this.activeTones.filter(t => t.osc !== osc);
-      };
-    };
-
-    // First beep immediately
-    playBeep();
-
-    // Repeat: 1s beep + 4s pause = 5s cycle
-    this._ringbackInterval = setInterval(playBeep, 5000);
+    // Audio goes through VDO.ninja — no fake tones needed
   }
 
   /**
@@ -120,38 +83,7 @@ class AudioService {
    * Стандарт: 425 Hz, 0.35с звук / 0.35с пауза
    */
   startBusy() {
-    this.stopAllTones();
-    this._ensureContext();
-
-    const playBeep = () => {
-      if (!this.ctx) return;
-      const now = this.ctx.currentTime;
-
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.value = 425;
-
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
-      gain.gain.setValueAtTime(0.15, now + 0.33);
-      gain.gain.linearRampToValueAtTime(0, now + 0.35);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.4);
-
-      this.activeTones.push({ osc, gain });
-      osc.onended = () => {
-        this.activeTones = this.activeTones.filter(t => t.osc !== osc);
-      };
-    };
-
-    playBeep();
-    this._busyInterval = setInterval(playBeep, 700); // 0.35s on + 0.35s off
+    // Audio goes through VDO.ninja — no fake tones needed
   }
 
   /**
@@ -159,46 +91,7 @@ class AudioService {
    * Двухтоновый сигнал с паузами
    */
   startIncomingRing() {
-    this.stopAllTones();
-    this._ensureContext();
-
-    const playRing = () => {
-      if (!this.ctx) return;
-      const now = this.ctx.currentTime;
-
-      // Ring pattern: two quick bursts
-      for (let i = 0; i < 2; i++) {
-        const offset = i * 0.25;
-        const osc1 = this.ctx.createOscillator();
-        const osc2 = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        osc1.type = 'sine';
-        osc2.type = 'sine';
-        osc1.frequency.value = 440;
-        osc2.frequency.value = 480;
-
-        gain.gain.setValueAtTime(0, now + offset);
-        gain.gain.linearRampToValueAtTime(0.12, now + offset + 0.02);
-        gain.gain.setValueAtTime(0.12, now + offset + 0.18);
-        gain.gain.linearRampToValueAtTime(0, now + offset + 0.2);
-
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc1.start(now + offset);
-        osc2.start(now + offset);
-        osc1.stop(now + offset + 0.25);
-        osc2.stop(now + offset + 0.25);
-
-        this.activeTones.push({ osc: osc1, gain }, { osc: osc2, gain });
-      }
-    };
-
-    playRing();
-    // Ring pattern: 0.5s ring + 3s pause
-    this._incomingInterval = setInterval(playRing, 3500);
+    // Audio goes through VDO.ninja — no fake tones needed
   }
 
   /**
