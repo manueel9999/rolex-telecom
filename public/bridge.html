@@ -134,22 +134,6 @@
     }
     .btn-stop:hover { transform: scale(1.02); }
 
-    .audio-meter {
-      margin: 20px 0;
-      height: 6px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 3px;
-      overflow: hidden;
-    }
-
-    .audio-meter-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #22c55e, #d4a853);
-      border-radius: 3px;
-      width: 0%;
-      transition: width 0.1s;
-    }
-
     .info-row {
       display: flex;
       justify-content: space-between;
@@ -161,6 +145,20 @@
 
     .info-row .label { color: #8888a0; }
     .info-row .value { color: #f0f0f5; font-weight: 500; }
+
+    .vdo-frame-wrapper {
+      margin: 20px 0;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.3);
+      min-height: 80px;
+    }
+
+    .vdo-frame-wrapper iframe {
+      width: 100%;
+      height: 80px;
+      border: none;
+    }
 
     .log {
       margin-top: 20px;
@@ -187,7 +185,7 @@
   <div class="bridge-container">
     <div class="bridge-header">
       <h1>🔊 Аудио Мост</h1>
-      <p>Rolex Telecom — Windows Bridge</p>
+      <p>Rolex Telecom — Windows Bridge via VDO.ninja</p>
     </div>
 
     <div style="text-align:center">
@@ -195,16 +193,6 @@
         <span class="status-dot"></span>
         <span id="status-text">Отключен</span>
       </div>
-    </div>
-
-    <div class="device-select">
-      <label>🎤 Микрофон (захват звука звонка)</label>
-      <select id="mic-select"><option>Загрузка...</option></select>
-    </div>
-
-    <div class="device-select">
-      <label>🔊 Динамик (куда выводить голос оператора)</label>
-      <select id="speaker-select"><option>Загрузка...</option></select>
     </div>
 
     <div class="device-select">
@@ -219,55 +207,30 @@
       ⏹ Остановить
     </button>
 
-    <div class="audio-meter" id="audio-meter" style="display:none">
-      <div class="audio-meter-fill" id="audio-meter-fill"></div>
+    <div class="vdo-frame-wrapper" id="vdo-frame-wrapper" style="display:none">
+      <!-- VDO.ninja iframe injected here -->
     </div>
 
     <div id="info-section" style="display:none">
       <div class="info-row">
-        <span class="label">Подключение</span>
-        <span class="value" id="info-connection">—</span>
+        <span class="label">Комната</span>
+        <span class="value" id="info-room">—</span>
       </div>
       <div class="info-row">
-        <span class="label">Микрофон</span>
-        <span class="value" id="info-mic">—</span>
+        <span class="label">Устройство</span>
+        <span class="value" id="info-device">—</span>
       </div>
       <div class="info-row">
-        <span class="label">Динамик</span>
-        <span class="value" id="info-speaker">—</span>
+        <span class="label">Статус</span>
+        <span class="value" id="info-status">Подключение...</span>
       </div>
     </div>
 
     <div class="log" id="log"></div>
   </div>
 
-  <audio id="remote-audio" autoplay></audio>
-
   <script>
-    let ws = null;
-    let pc = null;
-    let localStream = null;
-    let analyser = null;
-    let animFrame = null;
-    let pingInterval = null;
-    let meterAudioCtx = null;  // Track meter AudioContext for cleanup
-    let isRunning = false;     // Guard against parallel reconnects
-    let reconnectTimer = null; // Track reconnect timer
-
-    // ICE candidate queue — buffer until remoteDescription is set
-    let pendingIceCandidates = [];
-    let hasRemoteDescription = false;
-
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:72.56.236.204:3478' },
-      {
-        urls: 'turn:72.56.236.204:3478',
-        username: 'rolex',
-        credential: 'telecomsecret'
-      }
-    ];
+    let vdoIframe = null;
 
     // --- Log helper ---
     function log(text, type = '') {
@@ -275,65 +238,8 @@
       const time = new Date().toLocaleTimeString();
       el.innerHTML += `<div class="log-entry ${type}">[${time}] ${text}</div>`;
       el.scrollTop = el.scrollHeight;
-      // Keep log size reasonable
       while (el.children.length > 100) {
         el.removeChild(el.firstChild);
-      }
-    }
-
-    // --- Load audio devices ---
-    async function loadDevices() {
-      try {
-        // Need permission first
-        const temp = await navigator.mediaDevices.getUserMedia({ audio: true });
-        temp.getTracks().forEach(t => t.stop());
-
-        const devices = await navigator.mediaDevices.enumerateDevices();
-
-        const micSelect = document.getElementById('mic-select');
-        const speakerSelect = document.getElementById('speaker-select');
-
-        micSelect.innerHTML = '';
-        speakerSelect.innerHTML = '';
-
-        devices.filter(d => d.kind === 'audioinput').forEach((d, i) => {
-          const opt = document.createElement('option');
-          opt.value = d.deviceId;
-          opt.textContent = d.label || `Микрофон ${i + 1}`;
-          micSelect.appendChild(opt);
-        });
-
-        devices.filter(d => d.kind === 'audiooutput').forEach((d, i) => {
-          const opt = document.createElement('option');
-          opt.value = d.deviceId;
-          opt.textContent = d.label || `Динамик ${i + 1}`;
-          speakerSelect.appendChild(opt);
-        });
-
-        log('Устройства загружены', 'success');
-      } catch (e) {
-        log('Ошибка доступа к микрофону: ' + e.message, 'error');
-      }
-    }
-
-    // --- Load device codes ---
-    async function loadDeviceCodes() {
-      try {
-        const resp = await fetch('/api/admin/devices');
-        const data = await resp.json();
-        const select = document.getElementById('device-select');
-        select.innerHTML = '';
-        const deviceList = data.devices || [];
-        deviceList.forEach(d => {
-          const opt = document.createElement('option');
-          opt.value = d.id;
-          opt.textContent = `${d.name} (${d.id})`;
-          select.appendChild(opt);
-        });
-      } catch (e) {
-        // Fallback — manual input
-        const select = document.getElementById('device-select');
-        select.innerHTML = '<option value="57NvLjFgq4">Устройство №1 (57NvLjFgq4)</option>';
       }
     }
 
@@ -345,338 +251,142 @@
       statusText.textContent = text;
     }
 
+    // --- Load device codes ---
+    async function loadDeviceCodes() {
+      // Check URL params for pre-selected device
+      const urlParams = new URLSearchParams(window.location.search);
+      const preselectedDevice = urlParams.get('device');
+
+      try {
+        const resp = await fetch('/api/admin/devices');
+        const data = await resp.json();
+        const select = document.getElementById('device-select');
+        select.innerHTML = '';
+        const deviceList = data.devices || [];
+        deviceList.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.id;
+          opt.textContent = `${d.name} (${d.id})`;
+          if (preselectedDevice && d.id === preselectedDevice) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+
+        // Auto-start if device is preselected
+        if (preselectedDevice && deviceList.some(d => d.id === preselectedDevice)) {
+          log('Автозапуск для устройства: ' + preselectedDevice, 'info');
+          setTimeout(() => startBridge(), 500);
+        }
+      } catch (e) {
+        const select = document.getElementById('device-select');
+        select.innerHTML = '<option value="57NvLjFgq4">Устройство №1 (57NvLjFgq4)</option>';
+      }
+    }
+
     // --- Start bridge ---
     async function startBridge() {
       const deviceId = document.getElementById('device-select').value;
-      const micId = document.getElementById('mic-select').value;
-      const speakerId = document.getElementById('speaker-select').value;
 
       if (!deviceId) {
         log('Выберите устройство', 'error');
         return;
       }
 
-      isRunning = true;
-      log('Подключение...', 'info');
+      log('Получаю данные комнаты...', 'info');
       setStatus('connecting', 'Подключение...');
 
-      // Get mic
+      // Fetch VDO room info from server
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: micId } },
-          video: false,
-        });
-        log('Микрофон захвачен', 'success');
+        const resp = await fetch(`/api/bridge/${deviceId}`);
+        if (!resp.ok) {
+          throw new Error('Устройство не найдено');
+        }
+        const data = await resp.json();
+        const { vdoRoom, vdoPassword, deviceName } = data;
 
-        // Set up audio meter (track AudioContext for cleanup)
-        meterAudioCtx = new AudioContext();
-        const source = meterAudioCtx.createMediaStreamSource(localStream);
-        analyser = meterAudioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        startMeter();
+        if (!vdoRoom || !vdoPassword) {
+          throw new Error('VDO.ninja комната не настроена');
+        }
+
+        log(`Комната: ${vdoRoom}`, 'success');
+        log(`Устройство: ${deviceName}`, 'info');
+
+        // Build VDO.ninja URL for bridge:
+        // - &room= join the device's room
+        // - &push push the phone's audio
+        // - &miconly audio only
+        // - &proaudio high quality
+        // - &cleanoutput minimal UI
+        // - &autostart auto-connect
+        const vdoUrl = `https://vdo.ninja/?room=${encodeURIComponent(vdoRoom)}&password=${encodeURIComponent(vdoPassword)}&push&miconly&proaudio&cleanoutput&autostart&label=Bridge-${deviceId}`;
+
+        // Create iframe
+        const wrapper = document.getElementById('vdo-frame-wrapper');
+        wrapper.style.display = 'block';
+        wrapper.innerHTML = '';
+
+        vdoIframe = document.createElement('iframe');
+        vdoIframe.src = vdoUrl;
+        vdoIframe.allow = 'camera;microphone;autoplay;display-capture';
+        wrapper.appendChild(vdoIframe);
+
+        // Update UI
+        document.getElementById('btn-start').style.display = 'none';
+        document.getElementById('btn-stop').style.display = 'block';
+        document.getElementById('info-section').style.display = 'block';
+
+        document.getElementById('info-room').textContent = vdoRoom;
+        document.getElementById('info-device').textContent = deviceName;
+        document.getElementById('info-status').textContent = 'Подключён к VDO.ninja';
+
+        setStatus('connected', 'Подключён ✅');
+        log('VDO.ninja мост запущен! 🎉', 'success');
+
+        // Listen for VDO.ninja events
+        window.addEventListener('message', handleVdoMessage);
 
       } catch (e) {
-        log('Ошибка микрофона: ' + e.message, 'error');
+        log('Ошибка: ' + e.message, 'error');
         setStatus('offline', 'Ошибка');
-        isRunning = false;
-        return;
       }
-
-      connectWS(deviceId, speakerId);
-
-      // Update UI
-      document.getElementById('btn-start').style.display = 'none';
-      document.getElementById('btn-stop').style.display = 'block';
-      document.getElementById('audio-meter').style.display = 'block';
-      document.getElementById('info-section').style.display = 'block';
-
-      document.getElementById('info-mic').textContent =
-        document.getElementById('mic-select').selectedOptions[0]?.textContent || '—';
-      document.getElementById('info-speaker').textContent =
-        document.getElementById('speaker-select').selectedOptions[0]?.textContent || '—';
     }
 
-    // --- WebSocket connection (with reconnect) ---
-    function connectWS(deviceId, speakerId) {
-      // Guard against parallel connections
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        log('WS уже подключен, пропуск', 'info');
-        return;
-      }
-
-      // Clean up existing
-      if (ws) {
-        ws.onopen = null;
-        ws.onmessage = null;
-        ws.onclose = null;
-        ws.onerror = null;
-        try { ws.close(); } catch (e) {}
-      }
-
-      if (pingInterval) {
-        clearInterval(pingInterval);
-        pingInterval = null;
-      }
-
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${location.host}/ws?type=bridge&id=${deviceId}`);
-
-      ws.onopen = () => {
-        log('WebSocket подключен', 'success');
-        setStatus('connecting', 'Ожидание оператора...');
-
-        // Signal readiness — this is critical after reconnect!
-        ws.send(JSON.stringify({ type: 'rtc_ready', role: 'bridge', deviceId }));
-
-        // Start application-level ping
-        pingInterval = setInterval(() => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }));
+    // --- Handle VDO.ninja events ---
+    function handleVdoMessage(event) {
+      if (vdoIframe && event.source === vdoIframe.contentWindow) {
+        const data = event.data;
+        if (data && data.action) {
+          console.log('[VDO Bridge] Event:', data.action);
+          if (data.action === 'joined-room') {
+            log('Подключён к комнате', 'success');
+            document.getElementById('info-status').textContent = 'В комнате';
+          } else if (data.action === 'push-connection') {
+            log('Аудио поток активен', 'success');
           }
-        }, 15000);
-      };
-
-      ws.onmessage = async (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-
-          // Filter pong
-          if (msg.type === 'pong') return;
-
-          if (msg.type === 'rtc_offer') {
-            log('Получен offer от оператора', 'info');
-            await handleOffer(msg, speakerId);
-          } else if (msg.type === 'rtc_ice') {
-            await handleIceCandidate(msg);
-          } else if (msg.type === 'rtc_ready' && msg.role === 'operator') {
-            log('Оператор готов!', 'success');
-          }
-        } catch (e) {
-          log('Ошибка обработки: ' + e.message, 'error');
         }
-      };
-
-      ws.onclose = () => {
-        if (pingInterval) {
-          clearInterval(pingInterval);
-          pingInterval = null;
-        }
-
-        if (!isRunning) return; // Don't reconnect if stopped
-
-        if (pc && pc.connectionState === 'connected') {
-          log('WebSocket отключен, но аудио работает через P2P ✅ (переподключение...)', 'info');
-        } else {
-          log('WebSocket отключен — переподключение через 3с...', 'error');
-          setStatus('connecting', 'Переподключение...');
-        }
-
-        // Schedule reconnect with guard
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          if (isRunning && localStream) {
-            connectWS(deviceId, speakerId);
-          }
-        }, 3000);
-      };
-
-      ws.onerror = (e) => {
-        log('WebSocket ошибка', 'error');
-      };
-    }
-
-    // --- Handle ICE candidate with queue ---
-    async function handleIceCandidate(msg) {
-      if (!msg.candidate || msg.role === 'bridge') return;
-
-      // If no PC or no remote description yet, queue it
-      if (!pc || !hasRemoteDescription) {
-        log('ICE кандидат в очередь (ожидание offer)', 'info');
-        pendingIceCandidates.push(msg.candidate);
-        return;
-      }
-
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-      } catch (e) {
-        log('ICE ошибка: ' + e.message, 'error');
-      }
-    }
-
-    // --- Drain queued ICE candidates ---
-    async function drainIceCandidateQueue() {
-      if (!pc || !hasRemoteDescription) return;
-
-      const candidates = [...pendingIceCandidates];
-      pendingIceCandidates = [];
-
-      for (const candidate of candidates) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          log('Применён ICE из очереди', 'success');
-        } catch (e) {
-          log('ICE из очереди ошибка: ' + e.message, 'error');
-        }
-      }
-    }
-
-    // --- Handle WebRTC offer ---
-    async function handleOffer(msg, speakerId) {
-      // Close existing PC if any
-      if (pc) {
-        try { pc.close(); } catch (e) {}
-      }
-
-      // Reset ICE queue
-      pendingIceCandidates = [];
-      hasRemoteDescription = false;
-
-      pc = new RTCPeerConnection({ iceServers });
-
-      // Add local tracks (mic)
-      if (localStream) {
-        localStream.getTracks().forEach(track => {
-          pc.addTrack(track, localStream);
-        });
-      }
-
-      // Handle remote tracks (operator's voice)
-      pc.ontrack = (event) => {
-        log('Получен аудио-поток оператора! 🎉', 'success');
-        const remoteAudio = document.getElementById('remote-audio');
-        remoteAudio.srcObject = event.streams[0];
-
-        // Set output device (e.g. Galaxy A07 Bluetooth)
-        if (speakerId && typeof remoteAudio.setSinkId === 'function') {
-          remoteAudio.setSinkId(speakerId).then(() => {
-            log('Динамик установлен', 'success');
-          }).catch(e => {
-            log('setSinkId ошибка: ' + e.message, 'error');
-          });
-        }
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'rtc_ice',
-            candidate: event.candidate,
-            role: 'bridge',
-          }));
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        log('Соединение: ' + state, state === 'connected' ? 'success' : 'info');
-
-        if (state === 'connected') {
-          setStatus('connected', 'Подключен ✅');
-          document.getElementById('info-connection').textContent = 'WebRTC P2P';
-        } else if (state === 'failed') {
-          setStatus('offline', 'Ошибка соединения');
-          log('P2P соединение не удалось. Ожидание нового offer...', 'error');
-        } else if (state === 'disconnected') {
-          setStatus('connecting', 'Переподключение P2P...');
-          log('P2P разъединён, ожидание восстановления...', 'info');
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        log('ICE: ' + pc.iceConnectionState, 'info');
-      };
-
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-        hasRemoteDescription = true;
-
-        // Drain any ICE candidates that arrived before the offer
-        await drainIceCandidateQueue();
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        ws.send(JSON.stringify({
-          type: 'rtc_answer',
-          sdp: answer,
-          role: 'bridge',
-        }));
-
-        log('Отправлен answer', 'info');
-      } catch (e) {
-        log('Ошибка обработки offer: ' + e.message, 'error');
       }
     }
 
     // --- Stop bridge ---
     function stopBridge() {
-      isRunning = false;
+      window.removeEventListener('message', handleVdoMessage);
 
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
+      const wrapper = document.getElementById('vdo-frame-wrapper');
+      if (wrapper) {
+        wrapper.innerHTML = '';
+        wrapper.style.display = 'none';
       }
-
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-        localStream = null;
-      }
-      if (pc) { try { pc.close(); } catch(e) {} pc = null; }
-      if (ws) {
-        ws.onclose = null; // Prevent reconnect
-        ws.close();
-        ws = null;
-      }
-      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-
-      // Clean up meter AudioContext
-      if (meterAudioCtx) {
-        try { meterAudioCtx.close(); } catch (e) {}
-        meterAudioCtx = null;
-      }
-      analyser = null;
-
-      // Reset ICE queue
-      pendingIceCandidates = [];
-      hasRemoteDescription = false;
+      vdoIframe = null;
 
       setStatus('offline', 'Отключен');
       document.getElementById('btn-start').style.display = 'block';
       document.getElementById('btn-stop').style.display = 'none';
-      document.getElementById('audio-meter').style.display = 'none';
       document.getElementById('info-section').style.display = 'none';
       log('Мост остановлен', 'info');
     }
 
-    // --- Audio meter ---
-    function startMeter() {
-      const fill = document.getElementById('audio-meter-fill');
-      if (!analyser) return;
-      const data = new Uint8Array(analyser.frequencyBinCount);
-
-      function update() {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) sum += data[i];
-        const avg = sum / data.length;
-        const pct = Math.min(100, (avg / 128) * 100);
-        fill.style.width = pct + '%';
-        animFrame = requestAnimationFrame(update);
-      }
-      update();
-    }
-
     // --- Init ---
-    loadDevices();
     loadDeviceCodes();
     log('Аудио Мост готов', 'info');
   </script>

@@ -6,7 +6,6 @@
 import { api } from '../services/ApiService.js';
 import { ws } from '../services/WsService.js';
 import { audio } from '../services/AudioService.js';
-import { webrtc } from '../services/WebRTCService.js';
 import { icons } from '../utils/icons.js';
 import { LoginPage } from '../components/LoginPage.js';
 import { PhonePage } from '../components/PhonePage.js';
@@ -441,9 +440,6 @@ export class App {
   }
 
   async logout() {
-    // Clean up WebRTC
-    webrtc.destroy();
-
     // Clean up WS listeners and disconnect
     this._cleanupWsListeners();
     this._wsConnected = false;

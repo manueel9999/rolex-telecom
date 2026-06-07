@@ -520,13 +520,89 @@ body {
   border-left: 1px solid var(--glass-border);
 }
 
-/* --- Audio Panel (WebRTC) --- */
+/* --- Audio Panel (VDO.ninja) --- */
 .audio-panel {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-xl);
+}
+
+/* VDO.ninja room info */
+.vdo-room-info {
+  width: 100%;
+  padding: var(--space-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  margin: var(--space-md) 0;
+}
+
+.vdo-room-info__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.vdo-room-info__label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.vdo-room-info__value {
+  font-size: var(--font-size-sm);
+  color: var(--accent-gold);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* VDO.ninja bridge hint */
+.vdo-bridge-hint {
+  width: 100%;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--glass-border);
+}
+
+.vdo-bridge-hint__label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-sm);
+  display: block;
+}
+
+.vdo-bridge-hint__url {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+
+.vdo-bridge-hint__url code {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  color: var(--accent-gold);
+  word-break: break-all;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* VDO.ninja iframe container */
+.vdo-iframe-container {
+  width: 100%;
+  min-height: 80px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  margin: var(--space-md) 0;
+}
+
+.vdo-active-panel {
+  width: 100%;
+  max-width: 400px;
 }
 
 .audio-panel__idle,

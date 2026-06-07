@@ -5,7 +5,7 @@
  * 1. Serves the frontend
  * 2. Manages device authentication (device codes)
  * 3. Relays commands from web UI → Windows agent (via WebSocket)
- * 4. Manages VDO.ninja room assignments
+ * 4. Manages VDO.ninja room assignments per device
  */
 
 import express from 'express';
@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,17 +41,31 @@ app.use(express.static(path.join(__dirname, '../public')));
 const devices = new Map();
 const sessions = new Map(); // sessionId → { deviceId, ws, connectedAt }
 const agentConnections = new Map(); // deviceId → ws (Windows agent)
-const bridgeConnections = new Map(); // deviceId → ws (Bridge browser on Windows PC)
+
+/**
+ * Generate a unique VDO.ninja password for a device
+ */
+function generateVdoPassword() {
+  return crypto.randomBytes(6).toString('base64url'); // e.g. "aB3xQ9kL"
+}
+
+/**
+ * Generate a unique VDO.ninja room name for a device
+ * Format: rolex_{deviceId_lowercase} — unique, deterministic
+ */
+function generateVdoRoom(deviceId) {
+  return `rolex${deviceId.toLowerCase()}`;
+}
 
 // --- Seed some test devices ---
 function seedDevices() {
-  devices.set('57NvLjFgq4', {
-    id: '57NvLjFgq4',
+  const id = '57NvLjFgq4';
+  devices.set(id, {
+    id,
     name: 'Устройство №1',
     phone: '+7 (XXX) XXX-XX-XX',
-    vdoRoom: 'rolex-device-1',
-    vdoPush: '', // VDO.ninja push URL for the phone side
-    vdoView: '', // VDO.ninja view URL for the web side
+    vdoRoom: generateVdoRoom(id),
+    vdoPassword: generateVdoPassword(),
     status: 'offline', // online/offline/busy
     createdAt: new Date().toISOString(),
   });
@@ -89,6 +104,7 @@ app.post('/api/auth/login', (req, res) => {
       name: device.name,
       status: device.status,
       vdoRoom: device.vdoRoom,
+      vdoPassword: device.vdoPassword,
     },
   });
 });
@@ -108,6 +124,7 @@ app.get('/api/auth/session/:sessionId', (req, res) => {
       name: device.name,
       status: device.status,
       vdoRoom: device.vdoRoom,
+      vdoPassword: device.vdoPassword,
     },
   });
 });
@@ -128,18 +145,31 @@ app.get('/api/device/:deviceId', (req, res) => {
   res.json({ success: true, device });
 });
 
+// --- Bridge: Get VDO.ninja room info for a device ---
+app.get('/api/bridge/:deviceId', (req, res) => {
+  const device = devices.get(req.params.deviceId);
+  if (!device) {
+    return res.status(404).json({ error: 'Устройство не найдено' });
+  }
+  res.json({
+    success: true,
+    deviceName: device.name,
+    vdoRoom: device.vdoRoom,
+    vdoPassword: device.vdoPassword,
+  });
+});
+
 // --- Admin: Add Device ---
 app.post('/api/admin/devices', (req, res) => {
-  const { name, phone, vdoRoom } = req.body;
+  const { name, phone } = req.body;
   const id = generateDeviceCode();
 
   const device = {
     id,
     name: name || `Устройство ${devices.size + 1}`,
     phone: phone || '',
-    vdoRoom: vdoRoom || `rolex-${id.toLowerCase()}`,
-    vdoPush: '',
-    vdoView: '',
+    vdoRoom: generateVdoRoom(id),
+    vdoPassword: generateVdoPassword(),
     status: 'offline',
     createdAt: new Date().toISOString(),
   };
@@ -167,15 +197,23 @@ app.put('/api/admin/devices/:deviceId', (req, res) => {
     return res.status(404).json({ error: 'Устройство не найдено' });
   }
   
-  const { name, phone, vdoRoom, vdoPush, vdoView } = req.body;
+  const { name, phone } = req.body;
   if (name !== undefined) device.name = name;
   if (phone !== undefined) device.phone = phone;
-  if (vdoRoom !== undefined) device.vdoRoom = vdoRoom;
-  if (vdoPush !== undefined) device.vdoPush = vdoPush;
-  if (vdoView !== undefined) device.vdoView = vdoView;
   
   devices.set(device.id, device);
   
+  res.json({ success: true, device });
+});
+
+// --- Admin: Regenerate VDO password for a device ---
+app.post('/api/admin/devices/:deviceId/regen-vdo', (req, res) => {
+  const device = devices.get(req.params.deviceId);
+  if (!device) {
+    return res.status(404).json({ error: 'Устройство не найдено' });
+  }
+  device.vdoPassword = generateVdoPassword();
+  devices.set(device.id, device);
   res.json({ success: true, device });
 });
 
@@ -199,11 +237,11 @@ app.get('/{*splat}', (req, res) => {
 });
 
 // ============================================
-// WEBSOCKET
+// WEBSOCKET — only user and agent, no more bridge
 // ============================================
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const type = url.searchParams.get('type'); // 'user', 'agent', or 'bridge'
+  const type = url.searchParams.get('type'); // 'user' or 'agent'
   const id = url.searchParams.get('id');     // sessionId or deviceId
 
   console.log(`[WS] New connection: type=${type}, id=${id}`);
@@ -214,8 +252,6 @@ wss.on('connection', (ws, req) => {
 
   if (type === 'agent') {
     handleAgentConnection(ws, id);
-  } else if (type === 'bridge') {
-    handleBridgeConnection(ws, id);
   } else {
     handleUserConnection(ws, id);
   }
@@ -242,19 +278,13 @@ function handleUserConnection(ws, sessionId) {
 
   // Auto-recover session after server restart
   if (!session) {
-    // Try to find which device this session was for from the URL or recreate
-    // Accept any sessionId and associate with the first available device
-    // Better approach: check if sessionId looks like a device code
     const device = devices.get(sessionId);
     if (device) {
-      // sessionId is actually a deviceId — create session
       const newSessionId = sessionId;
       session = { deviceId: sessionId, ws, connectedAt: new Date() };
       sessions.set(newSessionId, session);
       console.log(`[WS] Auto-created session for device: ${sessionId}`);
     } else {
-      // Try to recover — create a session for the default device
-      // Look through all devices to find one
       let deviceId = null;
       for (const [id] of devices) { deviceId = id; break; }
       if (deviceId) {
@@ -280,6 +310,7 @@ function handleUserConnection(ws, sessionId) {
       name: device.name,
       status: device.status,
       vdoRoom: device.vdoRoom,
+      vdoPassword: device.vdoPassword,
     },
   }));
 
@@ -288,13 +319,6 @@ function handleUserConnection(ws, sessionId) {
   ws.send(JSON.stringify({
     type: 'agent_status',
     online: agentWs && agentWs.readyState === WebSocket.OPEN,
-  }));
-
-  // Check if bridge is online
-  const bridgeWs = bridgeConnections.get(session.deviceId);
-  ws.send(JSON.stringify({
-    type: 'bridge_status',
-    online: bridgeWs && bridgeWs.readyState === WebSocket.OPEN,
   }));
 
   ws.on('message', (data) => {
@@ -362,74 +386,19 @@ function handleAgentConnection(ws, deviceId) {
   });
 }
 
-// --- Bridge connection (Windows PC browser for audio) ---
-function handleBridgeConnection(ws, deviceId) {
-  const device = devices.get(deviceId);
-  if (!device) {
-    ws.send(JSON.stringify({ type: 'error', message: 'Unknown device' }));
-    ws.close();
-    return;
-  }
-
-  bridgeConnections.set(deviceId, ws);
-  console.log(`[WS] Bridge connected for device: ${deviceId}`);
-
-  // Notify users that bridge is online
-  broadcastToDeviceUsers(deviceId, { type: 'bridge_status', online: true });
-
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      ws.isAlive = 2;
-      if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
-        return;
-      }
-      handleBridgeMessage(ws, deviceId, msg);
-    } catch (e) {
-      console.error('[WS] Bridge parse error:', e);
-    }
-  });
-
-  ws.on('close', () => {
-    console.log(`[WS] Bridge disconnected: device=${deviceId}`);
-    bridgeConnections.delete(deviceId);
-    broadcastToDeviceUsers(deviceId, { type: 'bridge_status', online: false });
-  });
-}
-
-function handleBridgeMessage(ws, deviceId, msg) {
-  console.log(`[BRIDGE→] ${msg.type} from bridge for device ${deviceId}`);
-  // Relay WebRTC signaling from bridge → operator
-  if (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice' || msg.type === 'rtc_ready') {
-    console.log(`[RELAY] bridge→user: ${msg.type}`);
-    broadcastToDeviceUsers(deviceId, msg);
-    return;
-  }
-}
-
 function handleUserMessage(ws, session, msg) {
   const deviceId = session.deviceId;
   const agentWs = agentConnections.get(deviceId);
 
   switch (msg.type) {
     case 'dial':
-      // User pressed a dialpad key
       console.log(`[CMD] Dial key: ${msg.key} → device ${deviceId}`);
-      relayToAgent(agentWs, {
-        type: 'dial',
-        key: msg.key,
-      });
+      relayToAgent(agentWs, { type: 'dial', key: msg.key });
       break;
 
     case 'call':
-      // User pressed call button
       console.log(`[CMD] Call: ${msg.number} → device ${deviceId}`);
-      relayToAgent(agentWs, {
-        type: 'call',
-        number: msg.number,
-      });
-      // Save to history
+      relayToAgent(agentWs, { type: 'call', number: msg.number });
       callHistory.push({
         id: uuidv4(),
         deviceId,
@@ -467,32 +436,14 @@ function handleUserMessage(ws, session, msg) {
       relayToAgent(agentWs, { type: 'speaker', enabled: msg.enabled });
       break;
 
-    // WebRTC signaling — relay to bridge
-    case 'rtc_offer':
-    case 'rtc_answer':
-    case 'rtc_ice':
-    case 'rtc_ready': {
-      console.log(`[USER→] ${msg.type} from user for device ${deviceId}`);
-      const bridgeWs = bridgeConnections.get(deviceId);
-      if (bridgeWs && bridgeWs.readyState === WebSocket.OPEN) {
-        console.log(`[RELAY] user→bridge: ${msg.type}`);
-        bridgeWs.send(JSON.stringify(msg));
-      } else {
-        console.log(`[RELAY] NO bridge connected for ${deviceId}!`);
-      }
-      break;
-    }
-
     default:
       console.log(`[WS] Unknown user message type: ${msg.type}`);
   }
 }
 
 function handleAgentMessage(ws, deviceId, msg) {
-  // Agent sends status updates back to web users
   switch (msg.type) {
     case 'call_status':
-      // e.g. ringing, connected, ended
       broadcastToDeviceUsers(deviceId, {
         type: 'call_status',
         status: msg.status,
@@ -500,9 +451,7 @@ function handleAgentMessage(ws, deviceId, msg) {
         duration: msg.duration,
       });
 
-      // Update call history
       if (msg.status === 'ended' && msg.number) {
-        // Find the latest call for this number and update duration
         const existing = callHistory.find(c => 
           c.deviceId === deviceId && 
           c.number === msg.number && 
@@ -525,7 +474,6 @@ function handleAgentMessage(ws, deviceId, msg) {
       break;
 
     case 'incoming_call':
-      // Add incoming call to history
       callHistory.push({
         id: uuidv4(),
         deviceId,
@@ -557,7 +505,6 @@ function handleAgentMessage(ws, deviceId, msg) {
       break;
 
     default:
-      // Forward any other messages to users
       broadcastToDeviceUsers(deviceId, msg);
   }
 }
@@ -593,5 +540,10 @@ server.listen(PORT, () => {
   console.log(`\n🚀 Rolex Telecom Server running on http://localhost:${PORT}`);
   console.log(`📱 WebSocket endpoint: ws://localhost:${PORT}/ws`);
   console.log(`\n📋 Test device: 57NvLjFgq4`);
+  const testDevice = devices.get('57NvLjFgq4');
+  if (testDevice) {
+    console.log(`🔊 VDO Room: ${testDevice.vdoRoom}`);
+    console.log(`🔑 VDO Password: ${testDevice.vdoPassword}`);
+  }
   console.log(`\n--- Ready ---\n`);
 });
