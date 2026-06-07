@@ -1,6 +1,6 @@
 /**
- * Phone Page — 2-column layout: Dialpad | VDO.ninja Audio
- * Right panel embeds VDO.ninja with native UI for real device selection
+ * Phone Page — 2-column layout: Dialpad | Phone Screen (ws-scrcpy) / Audio (VDO.ninja)
+ * Right panel has tabs: Экран (ws-scrcpy iframe) | Аудио (VDO.ninja iframe)
  */
 
 import { icons } from '../utils/icons.js';
@@ -11,8 +11,18 @@ export class PhonePage {
   constructor({ state }) {
     this.state = state;
     this.inputNumber = '';
-    this.vdoStarted = false;
+    this.activeTab = 'screen'; // 'screen' or 'audio'
+    this.scrcpyLoaded = false;
+    this.vdoLoaded = false;
     this._destroyed = false;
+
+    // Listen for scrcpy URL updates from server
+    this._scrcpyHandler = ws.on('scrcpy_url', (msg) => {
+      if (this.state.device) {
+        this.state.device.scrcpyUrl = msg.scrcpyUrl;
+        this._updateRightPanel();
+      }
+    });
   }
 
   render() {
@@ -62,51 +72,127 @@ export class PhonePage {
           </div>
         </div>
 
-        <!-- RIGHT: VDO.ninja -->
+        <!-- RIGHT: Tabbed panel (Screen / Audio) -->
         <div class="conference-panel" id="conference-panel">
-          <div class="panel-header">
-            <span class="panel-header__title">${icons.headphones} Аудио связь</span>
-            <span class="panel-header__room" id="vdo-status">
+          <div class="panel-header panel-header--tabbed">
+            <div class="panel-tabs" id="panel-tabs">
+              <button class="panel-tab ${this.activeTab === 'screen' ? 'active' : ''}" data-tab="screen">
+                📱 Экран
+              </button>
+              <button class="panel-tab ${this.activeTab === 'audio' ? 'active' : ''}" data-tab="audio">
+                🎧 Аудио
+              </button>
+            </div>
+            <span class="panel-header__room" id="panel-status">
               <span class="dot offline"></span>
-              <span>VDO.ninja</span>
+              <span id="panel-status-text">—</span>
             </span>
           </div>
-          <div class="vdo-panel-body" id="vdo-panel-body">
-            ${this.vdoStarted ? this._renderVdoActive() : this._renderVdoIdle()}
+
+          <!-- Tab contents -->
+          <div class="panel-tab-content" id="tab-content-screen" style="display:${this.activeTab === 'screen' ? 'flex' : 'none'}">
+            ${this._renderScreenTab()}
+          </div>
+          <div class="panel-tab-content" id="tab-content-audio" style="display:${this.activeTab === 'audio' ? 'flex' : 'none'}">
+            ${this._renderAudioTab()}
           </div>
         </div>
       </div>
     `;
   }
 
-  _renderVdoIdle() {
+  // ---- Screen Tab (ws-scrcpy) ----
+  _renderScreenTab() {
+    const device = this.state.device || {};
+    const scrcpyUrl = device.scrcpyUrl;
+
+    if (this.scrcpyLoaded && scrcpyUrl) {
+      return `
+        <div class="scrcpy-live">
+          <div class="scrcpy-iframe-wrap" id="scrcpy-iframe-wrap">
+            <!-- iframe injected in mount -->
+          </div>
+          <div class="scrcpy-footer">
+            <button class="audio-control-btn danger" id="btn-stop-scrcpy">
+              ✕ <span>Отключить</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (scrcpyUrl) {
+      return `
+        <div class="tab-idle">
+          <div class="tab-idle__icon">📱</div>
+          <div class="tab-idle__title">Экран телефона</div>
+          <div class="tab-idle__hint">ws-scrcpy настроен. Нажмите чтобы подключить экран телефона с тач-управлением.</div>
+          <button class="audio-start-btn" id="btn-start-scrcpy">📱 Подключить экран</button>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tab-idle">
+        <div class="tab-idle__icon">📱</div>
+        <div class="tab-idle__title">Экран телефона</div>
+        <div class="tab-idle__hint">
+          ws-scrcpy не настроен.<br>
+          Запустите на Windows ПК:
+        </div>
+        <div class="tab-setup-steps">
+          <div class="tab-setup-step">
+            <span class="tab-setup-step__num">1</span>
+            <span>Откройте <code>agent/setup-scrcpy.bat</code></span>
+          </div>
+          <div class="tab-setup-step">
+            <span class="tab-setup-step__num">2</span>
+            <span>Подключите телефон по USB</span>
+          </div>
+          <div class="tab-setup-step">
+            <span class="tab-setup-step__num">3</span>
+            <span>Экран появится автоматически</span>
+          </div>
+        </div>
+        <div class="tab-manual-url">
+          <label class="tab-manual-url__label">Или введите URL ws-scrcpy вручную:</label>
+          <div class="tab-manual-url__input-row">
+            <input type="text" class="tab-manual-url__input" id="scrcpy-url-input" 
+              placeholder="http://localhost:8000" value="">
+            <button class="tab-manual-url__btn" id="btn-set-scrcpy-url">→</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---- Audio Tab (VDO.ninja) ----
+  _renderAudioTab() {
     const device = this.state.device || {};
     const room = device.vdoRoom || '—';
 
-    return `
-      <div class="vdo-idle">
-        <div class="vdo-idle__info">
-          <div class="vdo-idle__icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
+    if (this.vdoLoaded) {
+      return `
+        <div class="vdo-live">
+          <div class="vdo-iframe-container" id="vdo-iframe-container">
+            <!-- injected in mount -->
           </div>
-          <div class="vdo-idle__title">Подключить VDO.ninja</div>
-          <div class="vdo-idle__hint">Нажмите кнопку чтобы войти в комнату.<br>VDO.ninja сам предложит выбрать микрофон и наушники.</div>
-          <div class="vdo-idle__room">Комната: <code>${room}</code></div>
+          <div class="vdo-live__footer">
+            <button class="audio-control-btn danger" id="btn-stop-vdo">
+              ${icons.phoneOff} <span>Отключить</span>
+            </button>
+          </div>
         </div>
+      `;
+    }
 
-        <button class="audio-start-btn" id="btn-start-vdo">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          </svg>
-          Войти в комнату
-        </button>
-
+    return `
+      <div class="tab-idle">
+        <div class="tab-idle__icon">🎧</div>
+        <div class="tab-idle__title">Аудио связь (VDO.ninja)</div>
+        <div class="tab-idle__hint">Подключитесь для двусторонней голосовой связи.</div>
+        <div class="tab-idle__room">Комната: <code>${room}</code></div>
+        <button class="audio-start-btn" id="btn-start-vdo">🎧 Войти в комнату</button>
         <div class="vdo-bridge-hint">
           <span class="vdo-bridge-hint__label">Мост на Windows ПК:</span>
           <div class="vdo-bridge-hint__url">
@@ -118,29 +204,17 @@ export class PhonePage {
     `;
   }
 
-  _renderVdoActive() {
-    return `
-      <div class="vdo-live">
-        <div class="vdo-iframe-container" id="vdo-iframe-container">
-          <!-- VDO.ninja iframe injected here -->
-        </div>
-        <div class="vdo-live__footer">
-          <button class="audio-control-btn danger" id="btn-stop-vdo">
-            ${icons.phoneOff}
-            <span>Отключить</span>
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
   mount() {
     if (this._destroyed) return;
     this._bindDialpadEvents();
+    this._bindTabEvents();
     this._bindPanelEvents();
-    if (this.vdoStarted) {
-      this._injectVdoIframe();
-    }
+
+    // Re-inject iframes if tabs were already loaded
+    if (this.scrcpyLoaded) this._injectScrcpyIframe();
+    if (this.vdoLoaded) this._injectVdoIframe();
+
+    this._updateStatus();
   }
 
   _bindDialpadEvents() {
@@ -181,15 +255,69 @@ export class PhonePage {
     });
   }
 
+  _bindTabEvents() {
+    document.getElementById('panel-tabs')?.addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-tab]');
+      if (!tab) return;
+      this.activeTab = tab.dataset.tab;
+
+      // Toggle tab active states
+      document.querySelectorAll('.panel-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === this.activeTab));
+      // Toggle content visibility
+      document.getElementById('tab-content-screen').style.display = this.activeTab === 'screen' ? 'flex' : 'none';
+      document.getElementById('tab-content-audio').style.display = this.activeTab === 'audio' ? 'flex' : 'none';
+      this._updateStatus();
+    });
+  }
+
   _bindPanelEvents() {
-    // Idle: start
+    // --- Screen tab ---
+    document.getElementById('btn-start-scrcpy')?.addEventListener('click', () => {
+      this.scrcpyLoaded = true;
+      this._updateRightPanel();
+      this._injectScrcpyIframe();
+    });
+
+    document.getElementById('btn-stop-scrcpy')?.addEventListener('click', () => {
+      this.scrcpyLoaded = false;
+      this._updateRightPanel();
+    });
+
+    document.getElementById('btn-set-scrcpy-url')?.addEventListener('click', () => {
+      const input = document.getElementById('scrcpy-url-input');
+      const url = input?.value?.trim();
+      if (url) {
+        // Save scrcpy URL to server
+        fetch(`/api/device/${this.state.device?.id}/scrcpy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scrcpyUrl: url }),
+        }).then(() => {
+          if (this.state.device) this.state.device.scrcpyUrl = url;
+          this._updateRightPanel();
+        });
+      }
+    });
+
+    // Enter key on URL input
+    document.getElementById('scrcpy-url-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('btn-set-scrcpy-url')?.click();
+      }
+    });
+
+    // --- Audio tab ---
     document.getElementById('btn-start-vdo')?.addEventListener('click', () => {
-      this.vdoStarted = true;
-      this._reRenderPanel();
+      this.vdoLoaded = true;
+      this._updateAudioPanel();
       this._injectVdoIframe();
     });
 
-    // Idle: copy bridge URL
+    document.getElementById('btn-stop-vdo')?.addEventListener('click', () => {
+      this.vdoLoaded = false;
+      this._updateAudioPanel();
+    });
+
     document.getElementById('btn-copy-bridge')?.addEventListener('click', () => {
       const url = document.getElementById('bridge-url')?.textContent;
       if (url) {
@@ -198,49 +326,87 @@ export class PhonePage {
         if (btn) { btn.textContent = '✅'; setTimeout(() => { if (btn) btn.textContent = '📋'; }, 2000); }
       }
     });
+  }
 
-    // Active: stop
-    document.getElementById('btn-stop-vdo')?.addEventListener('click', () => {
-      this.vdoStarted = false;
-      this._reRenderPanel();
-    });
+  // ---- Inject iframes ----
+  _injectScrcpyIframe() {
+    const wrap = document.getElementById('scrcpy-iframe-wrap');
+    if (!wrap) return;
+    const url = this.state.device?.scrcpyUrl;
+    if (!url) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    iframe.allow = 'fullscreen';
+    iframe.id = 'scrcpy-iframe';
+    wrap.innerHTML = '';
+    wrap.appendChild(iframe);
+    this._updateStatus();
   }
 
   _injectVdoIframe() {
     const container = document.getElementById('vdo-iframe-container');
     if (!container) return;
-
     const device = this.state.device || {};
     const room = device.vdoRoom;
     const password = device.vdoPassword;
+    if (!room) return;
 
-    if (!room) {
-      console.error('[VDO] No room configured');
-      return;
-    }
-
-    // VDO.ninja URL — no cleanoutput, no autostart
-    // Let VDO.ninja show its native UI: device selection, controls, etc.
     const vdoUrl = `https://vdo.ninja/?room=${encodeURIComponent(room)}&password=${encodeURIComponent(password)}&push&miconly&proaudio&label=Operator`;
-
     const iframe = document.createElement('iframe');
     iframe.src = vdoUrl;
     iframe.allow = 'camera;microphone;autoplay;display-capture';
     iframe.id = 'vdo-iframe';
-
     container.innerHTML = '';
     container.appendChild(iframe);
-
-    this._updateVdoStatus(true);
+    this._updateStatus();
   }
 
-  _updateVdoStatus(connected) {
-    const el = document.getElementById('vdo-status');
+  // ---- Re-render helpers ----
+  _updateRightPanel() {
+    if (this._destroyed) return;
+    const el = document.getElementById('tab-content-screen');
     if (el) {
-      el.innerHTML = `
-        <span class="dot ${connected ? 'online' : 'offline'}"></span>
-        <span>VDO.ninja: <strong>${connected ? 'Подключён' : 'Оффлайн'}</strong></span>
-      `;
+      el.innerHTML = this._renderScreenTab();
+      this._bindPanelEvents();
+      if (this.scrcpyLoaded) this._injectScrcpyIframe();
+    }
+    this._updateStatus();
+  }
+
+  _updateAudioPanel() {
+    if (this._destroyed) return;
+    const el = document.getElementById('tab-content-audio');
+    if (el) {
+      el.innerHTML = this._renderAudioTab();
+      this._bindPanelEvents();
+      if (this.vdoLoaded) this._injectVdoIframe();
+    }
+    this._updateStatus();
+  }
+
+  _updateStatus() {
+    const el = document.getElementById('panel-status-text');
+    if (!el) return;
+    const dot = document.querySelector('#panel-status .dot');
+
+    if (this.activeTab === 'screen') {
+      if (this.scrcpyLoaded) {
+        el.textContent = 'Экран подключён';
+        dot?.classList.replace('offline', 'online');
+      } else {
+        const hasUrl = !!this.state.device?.scrcpyUrl;
+        el.textContent = hasUrl ? 'Готов к подключению' : 'Не настроен';
+        dot?.classList.replace('online', 'offline');
+      }
+    } else {
+      if (this.vdoLoaded) {
+        el.textContent = 'VDO.ninja подключён';
+        dot?.classList.replace('offline', 'online');
+      } else {
+        el.textContent = 'VDO.ninja';
+        dot?.classList.replace('online', 'offline');
+      }
     }
   }
 
@@ -256,17 +422,11 @@ export class PhonePage {
     }
   }
 
-  _reRenderPanel() {
-    if (this._destroyed) return;
-    const body = document.getElementById('vdo-panel-body');
-    if (body) {
-      body.innerHTML = this.vdoStarted ? this._renderVdoActive() : this._renderVdoIdle();
-      this._bindPanelEvents();
-    }
-    if (!this.vdoStarted) this._updateVdoStatus(false);
-  }
-
   destroy() {
     this._destroyed = true;
+    if (this._scrcpyHandler) {
+      this._scrcpyHandler();
+      this._scrcpyHandler = null;
+    }
   }
 }

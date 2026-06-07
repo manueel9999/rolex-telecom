@@ -66,7 +66,8 @@ function seedDevices() {
     phone: '+7 (XXX) XXX-XX-XX',
     vdoRoom: generateVdoRoom(id),
     vdoPassword: generateVdoPassword(),
-    status: 'offline', // online/offline/busy
+    scrcpyUrl: '', // set by agent when ws-scrcpy is running
+    status: 'offline',
     createdAt: new Date().toISOString(),
   });
 }
@@ -105,6 +106,7 @@ app.post('/api/auth/login', (req, res) => {
       status: device.status,
       vdoRoom: device.vdoRoom,
       vdoPassword: device.vdoPassword,
+      scrcpyUrl: device.scrcpyUrl,
     },
   });
 });
@@ -125,6 +127,7 @@ app.get('/api/auth/session/:sessionId', (req, res) => {
       status: device.status,
       vdoRoom: device.vdoRoom,
       vdoPassword: device.vdoPassword,
+      scrcpyUrl: device.scrcpyUrl,
     },
   });
 });
@@ -159,6 +162,26 @@ app.get('/api/bridge/:deviceId', (req, res) => {
   });
 });
 
+// --- Agent: Set scrcpy URL for a device ---
+app.post('/api/device/:deviceId/scrcpy', (req, res) => {
+  const device = devices.get(req.params.deviceId);
+  if (!device) {
+    return res.status(404).json({ error: 'Устройство не найдено' });
+  }
+  const { scrcpyUrl } = req.body;
+  device.scrcpyUrl = scrcpyUrl || '';
+  devices.set(device.id, device);
+
+  // Notify connected operators
+  broadcastToDeviceUsers(device.id, {
+    type: 'scrcpy_url',
+    scrcpyUrl: device.scrcpyUrl,
+  });
+
+  console.log(`[SCRCPY] Device ${device.id} scrcpy URL set to: ${device.scrcpyUrl}`);
+  res.json({ success: true, scrcpyUrl: device.scrcpyUrl });
+});
+
 // --- Admin: Add Device ---
 app.post('/api/admin/devices', (req, res) => {
   const { name, phone } = req.body;
@@ -170,6 +193,7 @@ app.post('/api/admin/devices', (req, res) => {
     phone: phone || '',
     vdoRoom: generateVdoRoom(id),
     vdoPassword: generateVdoPassword(),
+    scrcpyUrl: '',
     status: 'offline',
     createdAt: new Date().toISOString(),
   };
@@ -311,6 +335,7 @@ function handleUserConnection(ws, sessionId) {
       status: device.status,
       vdoRoom: device.vdoRoom,
       vdoPassword: device.vdoPassword,
+      scrcpyUrl: device.scrcpyUrl,
     },
   }));
 
