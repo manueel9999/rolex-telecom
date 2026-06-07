@@ -1,81 +1,89 @@
 @echo off
-chcp 65001 >nul 2>&1
-title Rolex Telecom — ws-scrcpy Setup
+title Rolex Telecom - scrcpy Setup
 
 echo ============================================
-echo   Rolex Telecom — ws-scrcpy Setup
-echo   Экран телефона через браузер
+echo   Rolex Telecom - scrcpy Setup
+echo   Phone screen mirroring
 echo ============================================
 echo.
 
-:: Check prerequisites
+:: Check adb
 where adb >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo [ОШИБКА] adb не найден в PATH!
-    echo Установите Android Platform Tools:
-    echo https://developer.android.com/tools/releases/platform-tools
+    echo [INFO] adb not in PATH, will use bundled version.
     echo.
-    echo Или добавьте папку с adb.exe в переменную PATH
-    pause
-    exit /b 1
 )
 
-where node >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ОШИБКА] Node.js не найден!
-    echo Установите Node.js: https://nodejs.org/
-    pause
-    exit /b 1
-)
-
-where git >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ОШИБКА] Git не найден!
-    echo Установите Git: https://git-scm.com/
-    pause
-    exit /b 1
-)
-
-:: Check connected devices
-echo [1/4] Проверяю подключённые устройства...
-adb devices -l
-echo.
-
-:: Clone or update ws-scrcpy
-if exist "ws-scrcpy" (
-    echo [2/4] ws-scrcpy уже установлен, обновляю...
-    cd ws-scrcpy
-    git pull
+:: Download scrcpy if not present
+if exist "scrcpy" (
+    echo [1/2] scrcpy folder found, skipping download.
 ) else (
-    echo [2/4] Клонирую ws-scrcpy...
-    git clone https://github.com/NetrisTV/ws-scrcpy.git
-    cd ws-scrcpy
+    echo [1/2] Downloading scrcpy (pre-built, no compilation needed)...
+    echo.
+    
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/Genymobile/scrcpy/releases/download/v3.2/scrcpy-win64-v3.2.zip' -OutFile 'scrcpy.zip'"
+    
+    if not exist "scrcpy.zip" (
+        echo [ERROR] Download failed!
+        echo Download manually:
+        echo https://github.com/Genymobile/scrcpy/releases
+        echo Extract to "scrcpy" folder next to this script.
+        pause
+        exit /b 1
+    )
+    
+    echo Extracting...
+    powershell -Command "Expand-Archive -Path 'scrcpy.zip' -DestinationPath '.' -Force"
+    
+    :: Rename extracted folder
+    for /d %%D in (scrcpy-win64*) do rename "%%D" "scrcpy"
+    
+    del "scrcpy.zip" 2>nul
+    echo [OK] scrcpy downloaded and extracted.
 )
 
-:: Install dependencies
-echo [3/4] Устанавливаю зависимости (это может занять несколько минут)...
-call npm install
+echo.
 
-if %ERRORLEVEL% NEQ 0 (
-    echo [ОШИБКА] npm install не удался
-    echo Попробуйте: npm install --force
-    pause
-    exit /b 1
+:: Check phone connection
+echo [2/2] Checking phone connection...
+scrcpy\adb.exe devices -l
+echo.
+echo ============================================
+echo.
+echo READY! Choose how to start:
+echo.
+echo   1 - Mirror phone screen (window on this PC)
+echo   2 - Mirror + audio forwarding
+echo   3 - Mirror phone screen (stay open)
+echo.
+echo After starting, share this window via
+echo VDO.ninja to let the operator see it.
+echo ============================================
+echo.
+
+:menu
+set /p choice="Enter choice (1/2/3): "
+
+if "%choice%"=="1" (
+    echo Starting scrcpy...
+    scrcpy\scrcpy.exe --window-title "Rolex Phone" --stay-awake
+    goto end
+)
+if "%choice%"=="2" (
+    echo Starting scrcpy with audio...
+    scrcpy\scrcpy.exe --window-title "Rolex Phone" --stay-awake --audio-codec=aac
+    goto end
+)
+if "%choice%"=="3" (
+    echo Starting scrcpy (stays open)...
+    scrcpy\scrcpy.exe --window-title "Rolex Phone" --stay-awake --turn-screen-off
+    goto end
 )
 
-:: Start ws-scrcpy
-echo.
-echo ============================================
-echo [4/4] Запускаю ws-scrcpy...
-echo.
-echo Экран телефона будет доступен на:
-echo   http://localhost:8000
-echo.
-echo Чтобы оператор мог видеть экран удалённо,
-echo вставьте этот URL в настройках Rolex Telecom.
-echo ============================================
-echo.
+echo Invalid choice, try again.
+goto menu
 
-call npm start
-
+:end
+echo.
+echo scrcpy closed.
 pause
