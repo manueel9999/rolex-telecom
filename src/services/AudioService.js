@@ -99,73 +99,21 @@ class AudioService {
    * 425 Hz continuous
    */
   startDialTone() {
-    this.stopAllTones();
-    this._ensureContext();
-
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.value = 425;
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    osc.start(now);
-
-    this.activeTones.push({ osc, gain });
+    // Audio goes through VDO.ninja
   }
 
   /**
    * Call connected beep — короткий звук при соединении
    */
   playConnected() {
-    this._ensureContext();
-    const now = this.ctx.currentTime;
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.value = 600;
-
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.2);
+    // Audio goes through VDO.ninja
   }
 
   /**
    * Call end — два коротких тона при завершении
    */
   playCallEnd() {
-    this.stopAllTones();
-    this._ensureContext();
-    const now = this.ctx.currentTime;
-
-    for (let i = 0; i < 3; i++) {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 480;
-
-      const start = now + i * 0.15;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.12, start + 0.02);
-      gain.gain.setValueAtTime(0.12, start + 0.08);
-      gain.gain.linearRampToValueAtTime(0, start + 0.1);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.15);
-    }
+    // Audio goes through VDO.ninja
   }
 
   /**
