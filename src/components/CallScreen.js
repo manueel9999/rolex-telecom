@@ -42,85 +42,60 @@ export class CallScreen {
 
         <div class="call-screen__info">
           <div class="call-screen__number">${callNumber || 'Неизвестный'}</div>
-          <div class="call-screen__status">${statusText}</div>
+          <div class="call-screen__status">
+            ${isConnected ? formatTime(callTimer) : statusText}
+          </div>
         </div>
-
-        ${isConnected ? `
-          <div class="call-screen__timer" id="call-timer">${formatTime(callTimer)}</div>
-
-          <div class="audio-visualizer active" id="audio-viz">
-            <div class="audio-visualizer__bar"></div>
-            <div class="audio-visualizer__bar"></div>
-            <div class="audio-visualizer__bar"></div>
-            <div class="audio-visualizer__bar"></div>
-            <div class="audio-visualizer__bar"></div>
-          </div>
-        ` : ''}
-
-        ${isConnected ? `
-          <div class="call-screen__controls">
-            <div class="call-control">
-              <button class="call-control__btn ${muted ? 'active' : ''}" id="btn-mute" title="Микрофон">
-                ${muted ? icons.micOff : icons.mic}
-              </button>
-              <span class="call-control__label">${muted ? 'Вкл. микро' : 'Выкл. микро'}</span>
-            </div>
-            <div class="call-control">
-              <button class="call-control__btn ${onHold ? 'active' : ''}" id="btn-hold" title="Удержание">
-                ${icons.pause}
-              </button>
-              <span class="call-control__label">${onHold ? 'Снять' : 'Удержание'}</span>
-            </div>
-            <div class="call-control">
-              <button class="call-control__btn" id="btn-speaker" title="Динамик">
-                ${icons.volume}
-              </button>
-              <span class="call-control__label">Динамик</span>
-            </div>
-            <div class="call-control">
-              <button class="call-control__btn ${this._keypadOpen ? 'active' : ''}" id="btn-keypad" title="Клавиатура">
-                ${icons.dialpad}
-              </button>
-              <span class="call-control__label">Клавиши</span>
-            </div>
-          </div>
-
-          <!-- In-call DTMF keypad -->
-          <div class="call-screen__keypad ${this._keypadOpen ? 'open' : ''}" id="call-keypad">
-            <div class="call-keypad__grid">
-              <button class="call-keypad__key" data-dtmf="1">1</button>
-              <button class="call-keypad__key" data-dtmf="2">2</button>
-              <button class="call-keypad__key" data-dtmf="3">3</button>
-              <button class="call-keypad__key" data-dtmf="4">4</button>
-              <button class="call-keypad__key" data-dtmf="5">5</button>
-              <button class="call-keypad__key" data-dtmf="6">6</button>
-              <button class="call-keypad__key" data-dtmf="7">7</button>
-              <button class="call-keypad__key" data-dtmf="8">8</button>
-              <button class="call-keypad__key" data-dtmf="9">9</button>
-              <button class="call-keypad__key" data-dtmf="*">✱</button>
-              <button class="call-keypad__key" data-dtmf="0">0</button>
-              <button class="call-keypad__key" data-dtmf="#">#</button>
-            </div>
-          </div>
-        ` : ''}
 
         <div class="call-screen__bottom-actions">
           ${isIncoming ? `
-            <div class="call-actions">
-              <button class="call-btn call-btn--red" id="btn-reject" title="Отклонить">
-                ${icons.phoneOff}
-              </button>
-              <button class="call-btn call-btn--green" id="btn-answer" title="Ответить">
-                ${icons.phone}
-              </button>
-            </div>
+            <button class="call-btn call-btn--red" id="btn-reject" title="Отклонить" style="width:40px;height:40px;">
+              ${icons.phoneOff}
+            </button>
+            <button class="call-btn call-btn--green" id="btn-answer" title="Ответить" style="width:40px;height:40px;">
+              ${icons.phone}
+            </button>
           ` : `
-            <button class="call-btn call-btn--red call-screen__end-btn" id="btn-hangup" title="Завершить">
+            <button class="call-btn call-btn--red" id="btn-hangup" title="Завершить" style="width:40px;height:40px;">
               ${icons.phoneOff}
             </button>
           `}
         </div>
       </div>
+
+      ${isConnected ? `
+        <div class="call-screen__controls">
+          <div class="call-control">
+            <button class="call-control__btn ${muted ? 'active' : ''}" id="btn-mute" title="Микрофон">
+              ${muted ? icons.micOff : icons.mic}
+            </button>
+          </div>
+          <div class="call-control">
+            <button class="call-control__btn ${this._keypadOpen ? 'active' : ''}" id="btn-keypad" title="Клавиатура">
+              ${icons.dialpad}
+            </button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${isConnected && this._keypadOpen ? `
+        <div class="call-screen__keypad open" id="call-keypad">
+          <div class="call-keypad__grid">
+            <button class="call-keypad__key" data-dtmf="1">1</button>
+            <button class="call-keypad__key" data-dtmf="2">2</button>
+            <button class="call-keypad__key" data-dtmf="3">3</button>
+            <button class="call-keypad__key" data-dtmf="4">4</button>
+            <button class="call-keypad__key" data-dtmf="5">5</button>
+            <button class="call-keypad__key" data-dtmf="6">6</button>
+            <button class="call-keypad__key" data-dtmf="7">7</button>
+            <button class="call-keypad__key" data-dtmf="8">8</button>
+            <button class="call-keypad__key" data-dtmf="9">9</button>
+            <button class="call-keypad__key" data-dtmf="*">✱</button>
+            <button class="call-keypad__key" data-dtmf="0">0</button>
+            <button class="call-keypad__key" data-dtmf="#">#</button>
+          </div>
+        </div>
+      ` : ''}
     `;
   }
 

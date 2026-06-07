@@ -1405,30 +1405,36 @@ body {
    ============================================ */
 .call-screen {
   position: fixed;
-  inset: 0;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(120%);
   z-index: 1000;
   display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-primary);
-  animation: slideUp 0.4s var(--transition-spring);
+  max-width: 420px;
+  width: calc(100% - 48px);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(212, 168, 83, 0.1);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  transition: transform 0.4s var(--transition-spring);
 }
 
 .call-screen.active {
-  display: flex;
+  display: block;
+  transform: translateX(-50%) translateY(0);
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateX(-50%) translateY(120%); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
 
 .call-screen__bg {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 0%, var(--accent-gold-dim) 0%, transparent 60%),
-              radial-gradient(ellipse at 50% 100%, var(--accent-purple-dim) 0%, transparent 60%);
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-gold-dim) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -1436,23 +1442,21 @@ body {
   position: relative;
   z-index: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--space-2xl);
-  max-width: 400px;
-  width: 100%;
-  padding: var(--space-xl);
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
 }
 
 .call-screen__avatar {
-  width: 120px;
-  height: 120px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent-gold), var(--accent-purple));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-3xl);
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: white;
   position: relative;
@@ -1461,7 +1465,7 @@ body {
 .call-screen__avatar.ringing::after {
   content: '';
   position: absolute;
-  inset: -8px;
+  inset: -4px;
   border: 2px solid var(--accent-gold);
   border-radius: 50%;
   animation: ring-pulse 1.5s infinite;
@@ -1473,25 +1477,28 @@ body {
 }
 
 .call-screen__info {
-  text-align: center;
+  flex: 1;
+  min-width: 0;
 }
 
 .call-screen__number {
-  font-size: var(--font-size-2xl);
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .call-screen__status {
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  margin-top: var(--space-xs);
 }
 
 .call-screen__timer {
-  font-size: var(--font-size-lg);
-  font-weight: 300;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
   color: var(--accent-gold);
   font-variant-numeric: tabular-nums;
 }
@@ -1505,8 +1512,8 @@ body {
 }
 
 .call-control__btn {
-  width: 56px;
-  height: 56px;
+  width: 38px;
+  height: 38px;
   border: none;
   border-radius: 50%;
   background: var(--glass-bg);
@@ -1532,8 +1539,8 @@ body {
 }
 
 .call-control__btn svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 .call-control__label {
@@ -1542,7 +1549,7 @@ body {
 }
 
 .call-screen__end-btn {
-  margin-top: var(--space-2xl);
+  margin: 0;
 }
 
 /* ============================================
@@ -2613,17 +2620,20 @@ body {
 
 /* Call screen bottom actions */
 .call-screen__bottom-actions {
-  margin-top: var(--space-xl);
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 /* ============================================
    IN-CALL DTMF KEYPAD
    ============================================ */
 .call-screen__controls {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-lg);
-  margin-top: var(--space-xl);
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg) var(--space-md);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .call-screen__keypad {
