@@ -394,10 +394,11 @@ export class App {
 
     switch (page) {
       case 'dialpad':
-        // Destroy previous PhonePage to clean up listeners
+        // Destroy previous PhonePage to clean up listeners, then create fresh one
         if (this.phonePage && typeof this.phonePage.destroy === 'function') {
           this.phonePage.destroy();
         }
+        this.phonePage = new PhonePage({ state: this.state });
         container.innerHTML = this.phonePage.render();
         this.phonePage.mount();
         break;
