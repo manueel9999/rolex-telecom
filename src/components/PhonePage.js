@@ -233,7 +233,10 @@ export class PhonePage {
     }
 
     document.getElementById('btn-call')?.addEventListener('click', () => {
-      if (this.inputNumber) ws.send({ type: 'call', number: this.inputNumber });
+      if (this.inputNumber) {
+        this.state.callNumber = this.inputNumber;
+        ws.send({ type: 'call', number: this.inputNumber });
+      }
     });
 
     document.getElementById('btn-backspace')?.addEventListener('click', () => {

@@ -115,14 +115,24 @@ export class App {
   handleCallStatus(msg) {
     switch (msg.status) {
       case 'ringing':
+        this.state.callNumber = msg.number || this.state.callNumber;
         this.state.callStatus = 'ringing';
         this.state.inCall = true;
-        audio.startRingback(); // длинные гудки
+        audio.startRingback();
         this.showCallScreen();
+        // Auto-connect after 15s if agent doesn't detect it
+        clearTimeout(this._autoConnectTimeout);
+        this._autoConnectTimeout = setTimeout(() => {
+          if (this.state.callStatus === 'ringing') {
+            this.handleCallStatus({ status: 'connected', number: this.state.callNumber });
+          }
+        }, 15000);
         break;
       case 'connected':
+        clearTimeout(this._autoConnectTimeout);
         audio.stopAllTones();
-        audio.playConnected(); // бип соединения
+        audio.playConnected();
+        this.state.callNumber = msg.number || this.state.callNumber;
         this.state.callStatus = 'connected';
         this.startCallTimer();
         this.renderCallScreen();
@@ -136,6 +146,7 @@ export class App {
         setTimeout(() => this.endCall(), 5000);
         break;
       case 'ended':
+        clearTimeout(this._autoConnectTimeout);
         this.endCall();
         break;
     }
