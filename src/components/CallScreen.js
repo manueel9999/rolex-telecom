@@ -12,6 +12,7 @@ export class CallScreen {
     this.onHold = onHold;
     this.onDTMF = onDTMF;
     this.onSpeaker = onSpeaker;
+    this._keypadOpen = false;
   }
 
   render(state) {
@@ -77,10 +78,28 @@ export class CallScreen {
               <span class="call-control__label">Динамик</span>
             </div>
             <div class="call-control">
-              <button class="call-control__btn" id="btn-keypad" title="Клавиатура">
+              <button class="call-control__btn ${this._keypadOpen ? 'active' : ''}" id="btn-keypad" title="Клавиатура">
                 ${icons.dialpad}
               </button>
               <span class="call-control__label">Клавиши</span>
+            </div>
+          </div>
+
+          <!-- In-call DTMF keypad -->
+          <div class="call-screen__keypad ${this._keypadOpen ? 'open' : ''}" id="call-keypad">
+            <div class="call-keypad__grid">
+              <button class="call-keypad__key" data-dtmf="1">1</button>
+              <button class="call-keypad__key" data-dtmf="2">2</button>
+              <button class="call-keypad__key" data-dtmf="3">3</button>
+              <button class="call-keypad__key" data-dtmf="4">4</button>
+              <button class="call-keypad__key" data-dtmf="5">5</button>
+              <button class="call-keypad__key" data-dtmf="6">6</button>
+              <button class="call-keypad__key" data-dtmf="7">7</button>
+              <button class="call-keypad__key" data-dtmf="8">8</button>
+              <button class="call-keypad__key" data-dtmf="9">9</button>
+              <button class="call-keypad__key" data-dtmf="*">✱</button>
+              <button class="call-keypad__key" data-dtmf="0">0</button>
+              <button class="call-keypad__key" data-dtmf="#">#</button>
             </div>
           </div>
         ` : ''}
@@ -113,10 +132,26 @@ export class CallScreen {
     document.getElementById('btn-hold')?.addEventListener('click', this.onHold);
     document.getElementById('btn-speaker')?.addEventListener('click', this.onSpeaker);
 
-    // DTMF keypad in-call (TODO: expand this into a mini-dialpad overlay)
+    // Toggle DTMF keypad
     document.getElementById('btn-keypad')?.addEventListener('click', () => {
-      // For now just send a tone
-      this.onDTMF?.('1');
+      this._keypadOpen = !this._keypadOpen;
+      const keypad = document.getElementById('call-keypad');
+      const btn = document.getElementById('btn-keypad');
+      if (keypad) keypad.classList.toggle('open', this._keypadOpen);
+      if (btn) btn.classList.toggle('active', this._keypadOpen);
+    });
+
+    // DTMF keys — each key sends the correct tone
+    document.querySelectorAll('[data-dtmf]').forEach(key => {
+      key.addEventListener('click', () => {
+        const dtmfKey = key.dataset.dtmf;
+        if (dtmfKey && this.onDTMF) {
+          this.onDTMF(dtmfKey);
+          // Visual feedback
+          key.style.background = 'rgba(212, 168, 83, 0.3)';
+          setTimeout(() => { key.style.background = ''; }, 150);
+        }
+      });
     });
   }
 }

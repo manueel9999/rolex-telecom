@@ -18,6 +18,17 @@ export class WebRTCService {
     this.selectedOutputDeviceId = null;
     this.remoteAudioEl = null;
 
+    // ICE candidate queue — buffer candidates until remoteDescription is set
+    this._pendingIceCandidates = [];
+    this._hasRemoteDescription = false;
+
+    // Listener unsubscribe functions for cleanup
+    this._wsUnsubscribers = [];
+
+    // ICE restart tracking
+    this._iceRestartAttempts = 0;
+    this._maxIceRestarts = 3;
+
     this.iceServers = [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
@@ -34,18 +45,34 @@ export class WebRTCService {
 
   /**
    * Initialize WebRTC connection
-   * @param {object} opts - { role, deviceId, ws }
+   * @param {object} opts - { role, deviceId, wsInstance }
    */
   async init({ role, deviceId, wsInstance }) {
+    // Clean up previous listeners to prevent duplication
+    this._cleanupWsListeners();
+
     this.role = role;
     this.deviceId = deviceId;
     this.ws = wsInstance;
+    this._iceRestartAttempts = 0;
 
     // Listen for signaling messages from the WebSocket
-    this.ws.on('rtc_offer', (msg) => this._handleOffer(msg));
-    this.ws.on('rtc_answer', (msg) => this._handleAnswer(msg));
-    this.ws.on('rtc_ice', (msg) => this._handleIceCandidate(msg));
-    this.ws.on('rtc_ready', (msg) => this._handleReady(msg));
+    this._wsUnsubscribers.push(
+      this.ws.on('rtc_offer', (msg) => this._handleOffer(msg)),
+      this.ws.on('rtc_answer', (msg) => this._handleAnswer(msg)),
+      this.ws.on('rtc_ice', (msg) => this._handleIceCandidate(msg)),
+      this.ws.on('rtc_ready', (msg) => this._handleReady(msg))
+    );
+  }
+
+  /**
+   * Clean up WS listeners to prevent duplication on re-init
+   */
+  _cleanupWsListeners() {
+    this._wsUnsubscribers.forEach(unsub => {
+      if (typeof unsub === 'function') unsub();
+    });
+    this._wsUnsubscribers = [];
   }
 
   /**
@@ -84,7 +111,7 @@ export class WebRTCService {
   }
 
   /**
-   * Stop audio connection
+   * Stop audio connection and clean up
    */
   stop() {
     if (this.localStream) {
@@ -95,8 +122,18 @@ export class WebRTCService {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+    this._pendingIceCandidates = [];
+    this._hasRemoteDescription = false;
     this.isConnected = false;
     if (this.onConnectionChange) this.onConnectionChange(false);
+  }
+
+  /**
+   * Fully destroy — stop + remove all WS listeners
+   */
+  destroy() {
+    this.stop();
+    this._cleanupWsListeners();
   }
 
   /**
@@ -198,6 +235,10 @@ export class WebRTCService {
       this.peerConnection.close();
     }
 
+    // Reset ICE queue state for new connection
+    this._pendingIceCandidates = [];
+    this._hasRemoteDescription = false;
+
     this.peerConnection = new RTCPeerConnection({
       iceServers: this.iceServers,
     });
@@ -250,30 +291,94 @@ export class WebRTCService {
 
       if (state === 'connected') {
         this.isConnected = true;
+        this._iceRestartAttempts = 0;
         if (this.onConnectionChange) this.onConnectionChange(true);
-      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      } else if (state === 'failed') {
+        this.isConnected = false;
+        if (this.onConnectionChange) this.onConnectionChange(false);
+        // Attempt ICE restart
+        this._attemptIceRestart();
+      } else if (state === 'disconnected' || state === 'closed') {
         this.isConnected = false;
         if (this.onConnectionChange) this.onConnectionChange(false);
       }
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      console.log('[WebRTC] ICE state:', this.peerConnection?.iceConnectionState);
+      const iceState = this.peerConnection?.iceConnectionState;
+      console.log('[WebRTC] ICE state:', iceState);
+
+      if (iceState === 'failed') {
+        this._attemptIceRestart();
+      }
     };
   }
 
+  /**
+   * Attempt ICE restart when connection fails
+   */
+  async _attemptIceRestart() {
+    if (this._iceRestartAttempts >= this._maxIceRestarts) {
+      console.warn('[WebRTC] Max ICE restart attempts reached, giving up');
+      return;
+    }
+
+    this._iceRestartAttempts++;
+    console.log(`[WebRTC] Attempting ICE restart (attempt ${this._iceRestartAttempts})`);
+
+    try {
+      if (this.peerConnection && this.role === 'operator') {
+        const offer = await this.peerConnection.createOffer({ iceRestart: true });
+        await this.peerConnection.setLocalDescription(offer);
+
+        this.ws.send({
+          type: 'rtc_offer',
+          sdp: offer,
+          role: this.role,
+          deviceId: this.deviceId,
+        });
+        console.log('[WebRTC] ICE restart offer sent');
+      }
+    } catch (e) {
+      console.error('[WebRTC] ICE restart failed:', e);
+    }
+  }
+
   async _createOffer() {
-    const offer = await this.peerConnection.createOffer();
-    await this.peerConnection.setLocalDescription(offer);
+    try {
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
 
-    this.ws.send({
-      type: 'rtc_offer',
-      sdp: offer,
-      role: this.role,
-      deviceId: this.deviceId,
-    });
+      this.ws.send({
+        type: 'rtc_offer',
+        sdp: offer,
+        role: this.role,
+        deviceId: this.deviceId,
+      });
 
-    console.log('[WebRTC] Sent offer');
+      console.log('[WebRTC] Sent offer');
+    } catch (e) {
+      console.error('[WebRTC] Failed to create offer:', e);
+    }
+  }
+
+  /**
+   * Apply any queued ICE candidates after remoteDescription is set
+   */
+  async _drainIceCandidateQueue() {
+    if (!this.peerConnection || !this._hasRemoteDescription) return;
+
+    const candidates = [...this._pendingIceCandidates];
+    this._pendingIceCandidates = [];
+
+    for (const candidate of candidates) {
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('[WebRTC] Applied queued ICE candidate');
+      } catch (e) {
+        console.error('[WebRTC] Failed to apply queued ICE candidate:', e);
+      }
+    }
   }
 
   // =============================================
@@ -296,7 +401,16 @@ export class WebRTCService {
     console.log('[WebRTC] Received offer');
 
     await this._createPeerConnection();
+
+    // Reset ICE queue for new negotiation
+    this._pendingIceCandidates = [];
+    this._hasRemoteDescription = false;
+
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    this._hasRemoteDescription = true;
+
+    // Drain any ICE candidates that arrived before remoteDescription was set
+    await this._drainIceCandidateQueue();
 
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
@@ -315,19 +429,40 @@ export class WebRTCService {
     if (this.role === 'bridge') return; // Only operator handles answers
 
     console.log('[WebRTC] Received answer');
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+
+    if (!this.peerConnection) {
+      console.warn('[WebRTC] No peer connection for answer, ignoring');
+      return;
+    }
+
+    try {
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      this._hasRemoteDescription = true;
+
+      // Drain any ICE candidates that arrived before remoteDescription was set
+      await this._drainIceCandidateQueue();
+    } catch (e) {
+      console.error('[WebRTC] Failed to set remote description:', e);
+    }
   }
 
   async _handleIceCandidate(msg) {
     // Only handle ICE from the other role
     if (msg.role === this.role) return;
 
-    if (this.peerConnection && msg.candidate) {
-      try {
-        await this.peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
-      } catch (e) {
-        console.error('[WebRTC] Failed to add ICE candidate:', e);
-      }
+    if (!msg.candidate) return;
+
+    // If peerConnection doesn't exist or remoteDescription not yet set, queue it
+    if (!this.peerConnection || !this._hasRemoteDescription) {
+      console.log('[WebRTC] Queuing ICE candidate (no remote description yet)');
+      this._pendingIceCandidates.push(msg.candidate);
+      return;
+    }
+
+    try {
+      await this.peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    } catch (e) {
+      console.error('[WebRTC] Failed to add ICE candidate:', e);
     }
   }
 }

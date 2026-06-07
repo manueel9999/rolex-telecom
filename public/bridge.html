@@ -250,6 +250,13 @@
     let analyser = null;
     let animFrame = null;
     let pingInterval = null;
+    let meterAudioCtx = null;  // Track meter AudioContext for cleanup
+    let isRunning = false;     // Guard against parallel reconnects
+    let reconnectTimer = null; // Track reconnect timer
+
+    // ICE candidate queue — buffer until remoteDescription is set
+    let pendingIceCandidates = [];
+    let hasRemoteDescription = false;
 
     const iceServers = [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -268,6 +275,10 @@
       const time = new Date().toLocaleTimeString();
       el.innerHTML += `<div class="log-entry ${type}">[${time}] ${text}</div>`;
       el.scrollTop = el.scrollHeight;
+      // Keep log size reasonable
+      while (el.children.length > 100) {
+        el.removeChild(el.firstChild);
+      }
     }
 
     // --- Load audio devices ---
@@ -312,7 +323,8 @@
         const data = await resp.json();
         const select = document.getElementById('device-select');
         select.innerHTML = '';
-        data.devices.forEach(d => {
+        const deviceList = data.devices || [];
+        deviceList.forEach(d => {
           const opt = document.createElement('option');
           opt.value = d.id;
           opt.textContent = `${d.name} (${d.id})`;
@@ -344,6 +356,7 @@
         return;
       }
 
+      isRunning = true;
       log('Подключение...', 'info');
       setStatus('connecting', 'Подключение...');
 
@@ -355,10 +368,10 @@
         });
         log('Микрофон захвачен', 'success');
 
-        // Set up audio meter
-        const audioCtx = new AudioContext();
-        const source = audioCtx.createMediaStreamSource(localStream);
-        analyser = audioCtx.createAnalyser();
+        // Set up audio meter (track AudioContext for cleanup)
+        meterAudioCtx = new AudioContext();
+        const source = meterAudioCtx.createMediaStreamSource(localStream);
+        analyser = meterAudioCtx.createAnalyser();
         analyser.fftSize = 256;
         source.connect(analyser);
         startMeter();
@@ -366,6 +379,7 @@
       } catch (e) {
         log('Ошибка микрофона: ' + e.message, 'error');
         setStatus('offline', 'Ошибка');
+        isRunning = false;
         return;
       }
 
@@ -385,6 +399,13 @@
 
     // --- WebSocket connection (with reconnect) ---
     function connectWS(deviceId, speakerId) {
+      // Guard against parallel connections
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        log('WS уже подключен, пропуск', 'info');
+        return;
+      }
+
+      // Clean up existing
       if (ws) {
         ws.onopen = null;
         ws.onmessage = null;
@@ -398,12 +419,19 @@
         pingInterval = null;
       }
 
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${protocol}//${location.host}/ws?type=bridge&id=${deviceId}`);
 
       ws.onopen = () => {
         log('WebSocket подключен', 'success');
         setStatus('connecting', 'Ожидание оператора...');
+
+        // Signal readiness — this is critical after reconnect!
         ws.send(JSON.stringify({ type: 'rtc_ready', role: 'bridge', deviceId }));
 
         // Start application-level ping
@@ -415,21 +443,22 @@
       };
 
       ws.onmessage = async (event) => {
-        const msg = JSON.parse(event.data);
+        try {
+          const msg = JSON.parse(event.data);
 
-        if (msg.type === 'rtc_offer') {
-          log('Получен offer от оператора', 'info');
-          await handleOffer(msg, speakerId);
-        } else if (msg.type === 'rtc_ice') {
-          if (pc && msg.candidate && msg.role !== 'bridge') {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            } catch (e) {
-              log('ICE ошибка: ' + e.message, 'error');
-            }
+          // Filter pong
+          if (msg.type === 'pong') return;
+
+          if (msg.type === 'rtc_offer') {
+            log('Получен offer от оператора', 'info');
+            await handleOffer(msg, speakerId);
+          } else if (msg.type === 'rtc_ice') {
+            await handleIceCandidate(msg);
+          } else if (msg.type === 'rtc_ready' && msg.role === 'operator') {
+            log('Оператор готов!', 'success');
           }
-        } else if (msg.type === 'rtc_ready' && msg.role === 'operator') {
-          log('Оператор готов!', 'success');
+        } catch (e) {
+          log('Ошибка обработки: ' + e.message, 'error');
         }
       };
 
@@ -438,14 +467,21 @@
           clearInterval(pingInterval);
           pingInterval = null;
         }
+
+        if (!isRunning) return; // Don't reconnect if stopped
+
         if (pc && pc.connectionState === 'connected') {
           log('WebSocket отключен, но аудио работает через P2P ✅ (переподключение...)', 'info');
         } else {
           log('WebSocket отключен — переподключение через 3с...', 'error');
           setStatus('connecting', 'Переподключение...');
         }
-        setTimeout(() => {
-          if (localStream) {
+
+        // Schedule reconnect with guard
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (isRunning && localStream) {
             connectWS(deviceId, speakerId);
           }
         }, 3000);
@@ -456,9 +492,51 @@
       };
     }
 
+    // --- Handle ICE candidate with queue ---
+    async function handleIceCandidate(msg) {
+      if (!msg.candidate || msg.role === 'bridge') return;
+
+      // If no PC or no remote description yet, queue it
+      if (!pc || !hasRemoteDescription) {
+        log('ICE кандидат в очередь (ожидание offer)', 'info');
+        pendingIceCandidates.push(msg.candidate);
+        return;
+      }
+
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      } catch (e) {
+        log('ICE ошибка: ' + e.message, 'error');
+      }
+    }
+
+    // --- Drain queued ICE candidates ---
+    async function drainIceCandidateQueue() {
+      if (!pc || !hasRemoteDescription) return;
+
+      const candidates = [...pendingIceCandidates];
+      pendingIceCandidates = [];
+
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          log('Применён ICE из очереди', 'success');
+        } catch (e) {
+          log('ICE из очереди ошибка: ' + e.message, 'error');
+        }
+      }
+    }
+
     // --- Handle WebRTC offer ---
     async function handleOffer(msg, speakerId) {
-      if (pc) pc.close();
+      // Close existing PC if any
+      if (pc) {
+        try { pc.close(); } catch (e) {}
+      }
+
+      // Reset ICE queue
+      pendingIceCandidates = [];
+      hasRemoteDescription = false;
 
       pc = new RTCPeerConnection({ iceServers });
 
@@ -478,7 +556,7 @@
         // Set output device (e.g. Galaxy A07 Bluetooth)
         if (speakerId && typeof remoteAudio.setSinkId === 'function') {
           remoteAudio.setSinkId(speakerId).then(() => {
-            log('Динамик установлен: ' + speakerId, 'success');
+            log('Динамик установлен', 'success');
           }).catch(e => {
             log('setSinkId ошибка: ' + e.message, 'error');
           });
@@ -502,34 +580,73 @@
         if (state === 'connected') {
           setStatus('connected', 'Подключен ✅');
           document.getElementById('info-connection').textContent = 'WebRTC P2P';
-        } else if (state === 'failed' || state === 'disconnected') {
-          setStatus('offline', 'Разъединён');
+        } else if (state === 'failed') {
+          setStatus('offline', 'Ошибка соединения');
+          log('P2P соединение не удалось. Ожидание нового offer...', 'error');
+        } else if (state === 'disconnected') {
+          setStatus('connecting', 'Переподключение P2P...');
+          log('P2P разъединён, ожидание восстановления...', 'info');
         }
       };
 
-      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      pc.oniceconnectionstatechange = () => {
+        log('ICE: ' + pc.iceConnectionState, 'info');
+      };
 
-      ws.send(JSON.stringify({
-        type: 'rtc_answer',
-        sdp: answer,
-        role: 'bridge',
-      }));
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        hasRemoteDescription = true;
 
-      log('Отправлен answer', 'info');
+        // Drain any ICE candidates that arrived before the offer
+        await drainIceCandidateQueue();
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        ws.send(JSON.stringify({
+          type: 'rtc_answer',
+          sdp: answer,
+          role: 'bridge',
+        }));
+
+        log('Отправлен answer', 'info');
+      } catch (e) {
+        log('Ошибка обработки offer: ' + e.message, 'error');
+      }
     }
 
     // --- Stop bridge ---
     function stopBridge() {
+      isRunning = false;
+
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
       if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
         localStream = null;
       }
-      if (pc) { pc.close(); pc = null; }
-      if (ws) { ws.close(); ws = null; }
+      if (pc) { try { pc.close(); } catch(e) {} pc = null; }
+      if (ws) {
+        ws.onclose = null; // Prevent reconnect
+        ws.close();
+        ws = null;
+      }
       if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-      if (animFrame) cancelAnimationFrame(animFrame);
+      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+
+      // Clean up meter AudioContext
+      if (meterAudioCtx) {
+        try { meterAudioCtx.close(); } catch (e) {}
+        meterAudioCtx = null;
+      }
+      analyser = null;
+
+      // Reset ICE queue
+      pendingIceCandidates = [];
+      hasRemoteDescription = false;
 
       setStatus('offline', 'Отключен');
       document.getElementById('btn-start').style.display = 'block';
@@ -542,9 +659,11 @@
     // --- Audio meter ---
     function startMeter() {
       const fill = document.getElementById('audio-meter-fill');
+      if (!analyser) return;
       const data = new Uint8Array(analyser.frequencyBinCount);
 
       function update() {
+        if (!analyser) return;
         analyser.getByteFrequencyData(data);
         let sum = 0;
         for (let i = 0; i < data.length; i++) sum += data[i];

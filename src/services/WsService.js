@@ -10,20 +10,31 @@ export class WsService {
     this.reconnectTimer = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
+    this._defaultMaxReconnectAttempts = 10;
     this.sessionId = null;
     this.isConnected = false;
     this.pingInterval = null;
     this.lastStates = new Map();
+    this._intentionalDisconnect = false;
   }
 
   connect(sessionId) {
     this.sessionId = sessionId;
     this.reconnectAttempts = 0;
+    this._intentionalDisconnect = false;
+    this.maxReconnectAttempts = this._defaultMaxReconnectAttempts;
     this.lastStates.clear();
     this._connect();
   }
 
   _connect() {
+    // Guard: don't create a new connection if one is already open/connecting
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      console.log('[WS] Already connected or connecting, skipping');
+      return;
+    }
+
+    // Clean up any existing connection
     if (this.ws) {
       this.ws.onopen = null;
       this.ws.onmessage = null;
@@ -63,7 +74,11 @@ export class WsService {
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        console.log('[WS] Message:', msg);
+
+        // Filter out pong responses — no need to process or log
+        if (msg.type === 'pong') return;
+
+        console.log('[WS] Message:', msg.type, msg);
         if (msg.type) {
           this.lastStates.set(msg.type, msg);
         }
@@ -81,7 +96,11 @@ export class WsService {
       console.log('[WS] Disconnected');
       this.isConnected = false;
       this.emit('connection', { connected: false });
-      this._scheduleReconnect();
+
+      // Only attempt reconnect if this wasn't intentional
+      if (!this._intentionalDisconnect) {
+        this._scheduleReconnect();
+      }
     };
 
     this.ws.onerror = (err) => {
@@ -90,6 +109,12 @@ export class WsService {
   }
 
   _scheduleReconnect() {
+    // Clear any existing reconnect timer to prevent parallel reconnects
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log('[WS] Max reconnect attempts reached');
       this.emit('reconnect_failed', {});
@@ -109,7 +134,7 @@ export class WsService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
-      console.warn('[WS] Not connected, cannot send:', msg);
+      console.warn('[WS] Not connected, cannot send:', msg.type || msg);
     }
   }
 
@@ -174,15 +199,25 @@ export class WsService {
   }
 
   disconnect() {
-    clearTimeout(this.reconnectTimer);
+    this._intentionalDisconnect = true;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
-    this.maxReconnectAttempts = 0; // prevent reconnect
+
     if (this.ws) {
+      this.ws.onclose = null; // Prevent reconnect trigger
       this.ws.close();
+      this.ws = null;
     }
+
+    this.isConnected = false;
   }
 }
 

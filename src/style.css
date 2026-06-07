@@ -1223,12 +1223,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.call-screen__controls {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-lg);
-  margin-top: var(--space-xl);
-}
 
 .call-control {
   display: flex;
@@ -2347,4 +2341,60 @@ body {
 /* Call screen bottom actions */
 .call-screen__bottom-actions {
   margin-top: var(--space-xl);
+}
+
+/* ============================================
+   IN-CALL DTMF KEYPAD
+   ============================================ */
+.call-screen__controls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-lg);
+  margin-top: var(--space-xl);
+}
+
+.call-screen__keypad {
+  display: none;
+  width: 100%;
+  max-width: 260px;
+  animation: fadeIn 0.2s ease;
+}
+
+.call-screen__keypad.open {
+  display: block;
+}
+
+.call-keypad__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+.call-keypad__key {
+  width: 100%;
+  aspect-ratio: 1.4;
+  border: none;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.call-keypad__key:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--accent-gold);
+  transform: scale(1.05);
+}
+
+.call-keypad__key:active {
+  transform: scale(0.95);
+  background: var(--accent-gold-dim);
 }

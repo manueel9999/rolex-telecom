@@ -21,8 +21,13 @@ export class PhonePage {
     this._micTestStream = null;
     this._micTestAnalyser = null;
     this._micTestAnimFrame = null;
+    this._micTestAudioCtx = null;
     this._speakerTestOsc = null;
     this._micLevelAnimFrame = null;
+    this._liveMicAnalyser = null;
+    this._liveMicAudioCtx = null;
+    this._bridgeStatusHandler = null;
+    this._destroyed = false;
   }
 
   render() {
@@ -247,6 +252,8 @@ export class PhonePage {
   }
 
   async mount() {
+    if (this._destroyed) return;
+
     // Check initial bridge status from cache
     const lastBridge = ws.getLastState('bridge_status');
     if (lastBridge) {
@@ -254,15 +261,18 @@ export class PhonePage {
       this._updateBridgeStatus();
     }
 
-    // Listen for bridge status
-    this._bridgeStatusHandler = (msg) => {
-      this.bridgeOnline = msg.online;
-      this._updateBridgeStatus();
-    };
-    ws.on('bridge_status', this._bridgeStatusHandler);
+    // Listen for bridge status (only if not already listening)
+    if (!this._bridgeStatusHandler) {
+      this._bridgeStatusHandler = (msg) => {
+        this.bridgeOnline = msg.online;
+        this._updateBridgeStatus();
+      };
+      ws.on('bridge_status', this._bridgeStatusHandler);
+    }
 
     // Setup WebRTC callbacks
     webrtc.onConnectionChange = (connected) => {
+      if (this._destroyed) return;
       this.rtcConnected = connected;
       this._reRenderAudioPanel();
       if (connected) {
@@ -277,6 +287,14 @@ export class PhonePage {
 
     // Bind events based on current state
     this._bindDialpadEvents();
+    this._bindAudioPanelEvents();
+  }
+
+  /**
+   * Bind all audio panel events (idle + connecting + connected)
+   * Unified method to avoid duplicate binding
+   */
+  _bindAudioPanelEvents() {
     this._bindIdleEvents();
     this._bindConnectingEvents();
     this._bindConnectedEvents();
@@ -506,6 +524,9 @@ export class PhonePage {
         video: false,
       };
 
+      // Stop any existing mic test first
+      this._stopMicTest();
+
       this._micTestStream = await navigator.mediaDevices.getUserMedia(constraints);
 
       // Show level meter
@@ -534,6 +555,7 @@ export class PhonePage {
   }
 
   _animateMicTest() {
+    if (this._destroyed) return;
     const bar = document.getElementById('mic-test-level-bar');
     if (!bar || !this._micTestAnalyser) return;
 
@@ -554,7 +576,7 @@ export class PhonePage {
       this._micTestStream = null;
     }
     if (this._micTestAudioCtx) {
-      this._micTestAudioCtx.close();
+      try { this._micTestAudioCtx.close(); } catch (e) {}
       this._micTestAudioCtx = null;
     }
     if (this._micTestAnimFrame) {
@@ -613,12 +635,12 @@ export class PhonePage {
         oscillator.connect(gainNode);
         gainNode.connect(dest);
 
-        const audio = new Audio();
-        audio.srcObject = dest.stream;
-        if (typeof audio.setSinkId === 'function') {
-          await audio.setSinkId(speakerId);
+        const testAudio = new Audio();
+        testAudio.srcObject = dest.stream;
+        if (typeof testAudio.setSinkId === 'function') {
+          await testAudio.setSinkId(speakerId);
         }
-        audio.play();
+        testAudio.play();
         oscillator.start();
 
         // Second tone
@@ -628,7 +650,7 @@ export class PhonePage {
 
         setTimeout(() => {
           oscillator.stop();
-          audio.pause();
+          testAudio.pause();
           audioCtx.close();
         }, 600);
       } else {
@@ -653,6 +675,9 @@ export class PhonePage {
   // =============================================
 
   _startMicLevelMeter() {
+    // Close previous context to prevent leak
+    this._stopMicLevelMeter();
+
     if (!webrtc.localStream) return;
 
     try {
@@ -669,6 +694,7 @@ export class PhonePage {
   }
 
   _animateLiveMic() {
+    if (this._destroyed) return;
     const bar = document.getElementById('mic-level-bar');
     if (!bar || !this._liveMicAnalyser) return;
 
@@ -689,7 +715,7 @@ export class PhonePage {
       this._micLevelAnimFrame = null;
     }
     if (this._liveMicAudioCtx) {
-      this._liveMicAudioCtx.close();
+      try { this._liveMicAudioCtx.close(); } catch (e) {}
       this._liveMicAudioCtx = null;
     }
     this._liveMicAnalyser = null;
@@ -710,21 +736,22 @@ export class PhonePage {
   }
 
   _reRenderAudioPanel() {
+    if (this._destroyed) return;
     const panel = document.getElementById('audio-panel');
     if (panel) {
       panel.innerHTML = this._renderAudioPanel(this.state.device || {});
-      // Only rebind audio events, NOT dialpad (to avoid duplicate handlers)
-      this._bindIdleEvents();
-      this._bindConnectingEvents();
-      this._bindConnectedEvents();
+      // Rebind audio events only (dialpad keeps its handlers from initial mount)
+      this._bindAudioPanelEvents();
     }
   }
 
   destroy() {
+    this._destroyed = true;
     this._stopMicTest();
     this._stopMicLevelMeter();
     if (this._bridgeStatusHandler) {
       ws.off('bridge_status', this._bridgeStatusHandler);
+      this._bridgeStatusHandler = null;
     }
   }
 }

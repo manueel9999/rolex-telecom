@@ -190,15 +190,6 @@ app.get('/api/calls/:deviceId', (req, res) => {
   res.json({ success: true, calls: deviceCalls });
 });
 
-// --- Admin: list devices (for bridge page) ---
-app.get('/api/admin/devices', (req, res) => {
-  const deviceList = [];
-  devices.forEach((d) => {
-    deviceList.push({ id: d.id, name: d.name, status: d.status });
-  });
-  res.json({ devices: deviceList });
-});
-
 // SPA fallback — skip bridge.html and other static files
 app.get('/{*splat}', (req, res) => {
   if (req.path.endsWith('.html') && req.path !== '/index.html') {

@@ -6,6 +6,7 @@
 import { api } from '../services/ApiService.js';
 import { ws } from '../services/WsService.js';
 import { audio } from '../services/AudioService.js';
+import { webrtc } from '../services/WebRTCService.js';
 import { icons } from '../utils/icons.js';
 import { LoginPage } from '../components/LoginPage.js';
 import { PhonePage } from '../components/PhonePage.js';
@@ -33,6 +34,8 @@ export class App {
 
     this.callInterval = null;
     this.toast = new Toast();
+    this._wsConnected = false; // Guard against duplicate WS connections
+    this._wsUnsubscribers = []; // Track WS event listeners for cleanup
   }
 
   async init() {
@@ -49,43 +52,65 @@ export class App {
   }
 
   connectWebSocket() {
+    // Guard: don't connect twice
+    if (this._wsConnected) {
+      console.log('[App] WebSocket already connected, skipping');
+      return;
+    }
+    this._wsConnected = true;
+
+    // Clean up any previous listeners
+    this._cleanupWsListeners();
+
     ws.connect(this.state.sessionId);
 
-    ws.on('connected', (msg) => {
-      this.state.device = msg.device;
-      this.render();
-    });
+    this._wsUnsubscribers.push(
+      ws.on('connected', (msg) => {
+        this.state.device = msg.device;
+        this.render();
+      }),
 
-    ws.on('connection', (msg) => {
-      if (msg.connected) {
-        this.toast.show('Подключено к серверу', 'success');
-      } else {
-        this.toast.show('Соединение потеряно...', 'error');
-      }
-    });
+      ws.on('connection', (msg) => {
+        if (msg.connected) {
+          this.toast.show('Подключено к серверу', 'success');
+        } else {
+          this.toast.show('Соединение потеряно...', 'error');
+        }
+      }),
 
-    ws.on('agent_status', (msg) => {
-      this.state.agentOnline = msg.online;
-      this.renderHeader();
-      if (msg.online) {
-        this.toast.show('📱 Устройство онлайн', 'success');
-      } else {
-        this.toast.show('📱 Устройство оффлайн', 'error');
-      }
-    });
+      ws.on('agent_status', (msg) => {
+        this.state.agentOnline = msg.online;
+        this.renderHeader();
+        if (msg.online) {
+          this.toast.show('📱 Устройство онлайн', 'success');
+        } else {
+          this.toast.show('📱 Устройство оффлайн', 'error');
+        }
+      }),
 
-    ws.on('call_status', (msg) => {
-      this.handleCallStatus(msg);
-    });
+      ws.on('call_status', (msg) => {
+        this.handleCallStatus(msg);
+      }),
 
-    ws.on('incoming_call', (msg) => {
-      this.handleIncomingCall(msg);
-    });
+      ws.on('incoming_call', (msg) => {
+        this.handleIncomingCall(msg);
+      }),
 
-    ws.on('phone_status', (msg) => {
-      // Update phone status indicators
-      this.renderHeader();
+      ws.on('phone_status', (msg) => {
+        // Update phone status indicators
+        this.renderHeader();
+      })
+    );
+  }
+
+  /**
+   * Clean up all WS event listeners
+   */
+  _cleanupWsListeners() {
+    this._wsUnsubscribers.forEach(unsub => {
+      if (typeof unsub === 'function') unsub();
     });
+    this._wsUnsubscribers = [];
   }
 
   handleCallStatus(msg) {
@@ -370,6 +395,10 @@ export class App {
 
     switch (page) {
       case 'dialpad':
+        // Destroy previous PhonePage to clean up listeners
+        if (this.phonePage && typeof this.phonePage.destroy === 'function') {
+          this.phonePage.destroy();
+        }
         container.innerHTML = this.phonePage.render();
         this.phonePage.mount();
         break;
@@ -412,7 +441,14 @@ export class App {
   }
 
   async logout() {
+    // Clean up WebRTC
+    webrtc.destroy();
+
+    // Clean up WS listeners and disconnect
+    this._cleanupWsListeners();
+    this._wsConnected = false;
     ws.disconnect();
+
     await api.logout();
     this.state = {
       screen: 'login',
